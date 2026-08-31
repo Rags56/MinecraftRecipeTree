@@ -28,6 +28,21 @@ const d1Migrations = await Promise.all([
 test('Cloudflare routes catalog, immutable datasets, and administration through the Worker', () => {
   assert.match(
     viteConfig,
+    /defineConfig\(async \(\{command\}\) =>/,
+    'the Vite configuration must distinguish local development from deployment builds',
+  );
+  assert.match(
+    viteConfig,
+    /const isLocalDev = command === ['"]serve['"] && !isCloudflareBeta && !isCloudflareProduction/,
+    'only an explicit local development server may receive the production read origin',
+  );
+  assert.match(
+    viteConfig,
+    /:\s*isLocalDev\s*\?\s*\{vars:\s*\{BETA_DATA_ORIGIN\}\}\s*:\s*\{\}/,
+    'local development should reuse the public production dataset catalog without changing deployment bindings',
+  );
+  assert.match(
+    viteConfig,
     /MRT_DEPLOY_TARGET\s*===\s*['"]cloudflare-beta['"]/,
     'the standalone Cloudflare beta build must be selected explicitly',
   );

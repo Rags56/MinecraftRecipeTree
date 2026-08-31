@@ -169,7 +169,7 @@ test('every recipe browsing surface exposes the shared recipe and item zoom cont
   assert.match(appSource, /<ContentZoomControl[\s\S]*?appearance="toolbar"/u);
   assert.match(
     appSource,
-    /<ItemDetailModal[\s\S]*?onContentZoomChange=\{previewContentZoom\}[\s\S]*?onContentZoomComplete=\{saveContentZoom\}/u,
+    /<LazyItemDetailModal[\s\S]*?onContentZoomChange=\{previewContentZoom\}[\s\S]*?onContentZoomComplete=\{saveContentZoom\}/u,
   );
   assert.match(
     itemDetailSource,

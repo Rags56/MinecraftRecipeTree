@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Animated,
   Linking,
+  Modal,
   Platform,
   StyleSheet,
   Text,
@@ -14,19 +15,11 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import {SafeAreaProvider, SafeAreaView, initialWindowMetrics} from './src/ui/safeArea';
-import {ItemDetailModal} from './src/components/ItemDetailModal';
 import {ContentZoomControl} from './src/components/ContentZoomControl';
-import {DatasetPicker} from './src/components/DatasetPicker';
 import {DatasetSwitcher} from './src/components/DatasetSwitcher';
-import {GraphGuideModal} from './src/components/GraphGuideModal';
 import {BugIcon} from './src/components/BugIcon';
-import {IssueReportModal} from './src/components/IssueReportModal';
 import type {GitHubIssueKind, IssueReportContext} from './src/components/githubIssues';
 import {ItemsScreen} from './src/components/ItemsScreen';
-import {MobsScreen} from './src/components/MobsScreen';
-import {MobileUploadGuide} from './src/components/MobileUploadGuide';
-import {RecipeStageModal} from './src/components/RecipeStageModal';
-import {RecipeHistoryModal} from './src/components/RecipeHistoryModal';
 import {DataProvider, useData, useLoadState} from './src/data/DataContext';
 import {DatasetReadinessMarker} from './src/data/DatasetReadinessMarker';
 import {
@@ -63,16 +56,85 @@ import {
 import {clearGraphSession, loadGraphSession} from './src/graph/graphSession';
 import type {RecipeImportReport} from './src/graph/RecipeImportDetailsModal';
 import {UserProvider, useUser} from './src/account/UserContext';
-import {AccountModal} from './src/account/AccountModal';
-import {FavoritesModal} from './src/account/FavoritesModal';
-import {SignInModal} from './src/account/SignInModal';
-import {DonationsModal} from './src/donations/DonationsModal';
 import {ThemePreferenceProvider, useThemePreference} from './src/ui/themePreference';
 
 const LazyGraphScreen = React.lazy(async () => {
   const module = await import('./src/graph/GraphScreen');
   return {default: module.GraphScreen};
 });
+
+const LazyItemDetailModal = React.lazy(async () => {
+  const module = await import('./src/components/ItemDetailModal');
+  return {default: module.ItemDetailModal};
+});
+
+const LazyDatasetPicker = React.lazy(async () => {
+  const module = await import('./src/components/DatasetPicker');
+  return {default: module.DatasetPicker};
+});
+
+const LazyGraphGuideModal = React.lazy(async () => {
+  const module = await import('./src/components/GraphGuideModal');
+  return {default: module.GraphGuideModal};
+});
+
+const LazyIssueReportModal = React.lazy(async () => {
+  const module = await import('./src/components/IssueReportModal');
+  return {default: module.IssueReportModal};
+});
+
+const LazyMobsScreen = React.lazy(async () => {
+  const module = await import('./src/components/MobsScreen');
+  return {default: module.MobsScreen};
+});
+
+const LazyMobileUploadGuide = React.lazy(async () => {
+  const module = await import('./src/components/MobileUploadGuide');
+  return {default: module.MobileUploadGuide};
+});
+
+const LazyRecipeStageModal = React.lazy(async () => {
+  const module = await import('./src/components/RecipeStageModal');
+  return {default: module.RecipeStageModal};
+});
+
+const LazyRecipeHistoryModal = React.lazy(async () => {
+  const module = await import('./src/components/RecipeHistoryModal');
+  return {default: module.RecipeHistoryModal};
+});
+
+const LazyFavoritesModal = React.lazy(async () => {
+  const module = await import('./src/account/FavoritesModal');
+  return {default: module.FavoritesModal};
+});
+
+const LazySignInModal = React.lazy(async () => {
+  const module = await import('./src/account/SignInModal');
+  return {default: module.SignInModal};
+});
+
+const LazyAccountModal = React.lazy(async () => {
+  const module = await import('./src/account/AccountModal');
+  return {default: module.AccountModal};
+});
+
+const LazyDonationsModal = React.lazy(async () => {
+  const module = await import('./src/donations/DonationsModal');
+  return {default: module.DonationsModal};
+});
+
+function DeferredModalFallback({label}: {label: string}) {
+  return (
+    <Modal visible transparent animationType="fade">
+      <View style={styles.deferredModalBackdrop} accessibilityRole="progressbar">
+        <View style={styles.deferredModalCard}>
+          <ActivityIndicator color={theme.accent} size="large" />
+          <Text style={styles.loadingText}>Loading {label}…</Text>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 class GraphErrorBoundary extends React.Component<
   {children: React.ReactNode; onRetry(recovery: GraphRenderRecovery): void; onReturnToItems(): void},
@@ -196,26 +258,32 @@ function DatasetRoot() {
         onCompactMenuExpandedChange={onCompactMenuExpandedChange}
       />
       {showDatasetPicker && (
-        <DatasetPicker
-          visible
-          datasets={datasets}
-          selectedSlug={selectedSlug}
-          onSelect={slug => {
-            catalog.select(slug);
-            setShowDatasetPicker(false);
-          }}
-          onDeleteLocal={catalog.removeLocal}
-          onClose={() => setShowDatasetPicker(false)}
-        />
+        <Suspense fallback={<DeferredModalFallback label="modpacks" />}>
+          <LazyDatasetPicker
+            visible
+            datasets={datasets}
+            selectedSlug={selectedSlug}
+            onSelect={slug => {
+              catalog.select(slug);
+              setShowDatasetPicker(false);
+            }}
+            onDeleteLocal={catalog.removeLocal}
+            onClose={() => setShowDatasetPicker(false)}
+          />
+        </Suspense>
       )}
-      <MobileUploadGuide
-        visible={showMobileUploadGuide}
-        onClose={() => setShowMobileUploadGuide(false)}
-        onInstalled={slug => {
-          setShowMobileUploadGuide(false);
-          catalog.refreshLocal(slug);
-        }}
-      />
+      {showMobileUploadGuide && (
+        <Suspense fallback={<DeferredModalFallback label="import guide" />}>
+          <LazyMobileUploadGuide
+            visible
+            onClose={() => setShowMobileUploadGuide(false)}
+            onInstalled={slug => {
+              setShowMobileUploadGuide(false);
+              catalog.refreshLocal(slug);
+            }}
+          />
+        </Suspense>
+      )}
     </>
   );
 
@@ -414,6 +482,7 @@ function Shell({
   const [showRecipeStages, setShowRecipeStages] = useState(false);
   const [showGraphGuide, setShowGraphGuide] = useState(false);
   const [showIssueReport, setShowIssueReport] = useState(false);
+  const [hasVisitedMobs, setHasVisitedMobs] = useState(tab === 'mobs');
   const [showInfoMenu, setShowInfoMenu] = useState(false);
   const [showAppMenu, setShowAppMenu] = useState(false);
   const [recipeImportRequestId, setRecipeImportRequestId] = useState(0);
@@ -474,6 +543,9 @@ function Shell({
   useEffect(() => {
     if (Platform.OS === 'web') setHasHydrated(true);
   }, []);
+  useEffect(() => {
+    if (tab === 'mobs') setHasVisitedMobs(true);
+  }, [tab]);
   useEffect(() => {
     if (account.user) setShowSignIn(false);
   }, [account.user]);
@@ -933,7 +1005,7 @@ function Shell({
               </View>
             )}
           </View>
-          {data.capabilities.mobs && (
+          {data.capabilities.mobs && hasVisitedMobs && (
             <View
               style={[
                 styles.body,
@@ -948,7 +1020,15 @@ function Shell({
               importantForAccessibility={
                 Platform.OS !== 'web' && tab !== 'mobs' ? 'no-hide-descendants' : 'auto'
               }>
-              <MobsScreen />
+              <Suspense
+                fallback={(
+                  <View style={styles.center} accessibilityRole="progressbar">
+                    <ActivityIndicator color={theme.accent} size="large" />
+                    <Text style={styles.loadingText}>Loading mobs…</Text>
+                  </View>
+                )}>
+                <LazyMobsScreen />
+              </Suspense>
             </View>
           )}
         </View>
@@ -956,86 +1036,106 @@ function Shell({
       {Platform.OS !== 'web' && (
         <MobileBottomNavigation hasMobs={data.capabilities.mobs} />
       )}
-      <ItemDetailModal
-        interfaceZoom={interfaceZoom}
-        contentZoom={contentZoom}
-        onContentZoomChange={previewContentZoom}
-        onContentZoomComplete={saveContentZoom}
-      />
+      {ui.itemStack.length > 0 && (
+        <Suspense fallback={<DeferredModalFallback label="item details" />}>
+          <LazyItemDetailModal
+            interfaceZoom={interfaceZoom}
+            contentZoom={contentZoom}
+            onContentZoomChange={previewContentZoom}
+            onContentZoomComplete={saveContentZoom}
+          />
+        </Suspense>
+      )}
       {showRecipeStages && (
-        <RecipeStageModal
-          visible
-          interfaceZoom={interfaceZoom}
-          onClose={() => setShowRecipeStages(false)}
-        />
+        <Suspense fallback={<DeferredModalFallback label="recipe stages" />}>
+          <LazyRecipeStageModal
+            visible
+            interfaceZoom={interfaceZoom}
+            onClose={() => setShowRecipeStages(false)}
+          />
+        </Suspense>
       )}
       {showRecipeHistory && (
-        <RecipeHistoryModal
-          visible
-          interfaceZoom={interfaceZoom}
-          onClose={() => setShowRecipeHistory(false)}
-        />
+        <Suspense fallback={<DeferredModalFallback label="recipe history" />}>
+          <LazyRecipeHistoryModal
+            visible
+            interfaceZoom={interfaceZoom}
+            onClose={() => setShowRecipeHistory(false)}
+          />
+        </Suspense>
       )}
       {showFavorites && (
-        <FavoritesModal
-          visible
-          interfaceZoom={interfaceZoom}
-          contentZoom={contentZoom}
-          onContentZoomChange={previewContentZoom}
-          onContentZoomComplete={saveContentZoom}
-          onClose={() => setShowFavorites(false)}
-        />
+        <Suspense fallback={<DeferredModalFallback label="favorites" />}>
+          <LazyFavoritesModal
+            visible
+            interfaceZoom={interfaceZoom}
+            contentZoom={contentZoom}
+            onContentZoomChange={previewContentZoom}
+            onContentZoomComplete={saveContentZoom}
+            onClose={() => setShowFavorites(false)}
+          />
+        </Suspense>
       )}
       {showSignIn && (
-        <SignInModal
-          visible
-          interfaceZoom={interfaceZoom}
-          onClose={() => setShowSignIn(false)}
-        />
+        <Suspense fallback={<DeferredModalFallback label="sign in" />}>
+          <LazySignInModal
+            visible
+            interfaceZoom={interfaceZoom}
+            onClose={() => setShowSignIn(false)}
+          />
+        </Suspense>
       )}
       {showAccount && (
-        <AccountModal
-          visible
-          interfaceZoom={interfaceZoom}
-          onClose={() => setShowAccount(false)}
-          onOpenDonations={() => {
-            setShowAccount(false);
-            setDonationOutcome(null);
-            setShowDonations(true);
-          }}
-        />
+        <Suspense fallback={<DeferredModalFallback label="account" />}>
+          <LazyAccountModal
+            visible
+            interfaceZoom={interfaceZoom}
+            onClose={() => setShowAccount(false)}
+            onOpenDonations={() => {
+              setShowAccount(false);
+              setDonationOutcome(null);
+              setShowDonations(true);
+            }}
+          />
+        </Suspense>
       )}
       {showDonations && (
-        <DonationsModal
-          visible
-          interfaceZoom={interfaceZoom}
-          checkoutOutcome={donationOutcome}
-          onClose={() => {
-            setShowDonations(false);
-            setDonationOutcome(null);
-          }}
-        />
+        <Suspense fallback={<DeferredModalFallback label="donations" />}>
+          <LazyDonationsModal
+            visible
+            interfaceZoom={interfaceZoom}
+            checkoutOutcome={donationOutcome}
+            onClose={() => {
+              setShowDonations(false);
+              setDonationOutcome(null);
+            }}
+          />
+        </Suspense>
       )}
       {showGraphGuide && (
-        <GraphGuideModal
-          visible
-          interfaceZoom={interfaceZoom}
-          onClose={() => setShowGraphGuide(false)}
-          onOpenIssueReport={kind => {
-            setShowGraphGuide(false);
-            setIssueReportKind(kind);
-            setShowIssueReport(true);
-          }}
-        />
+        <Suspense fallback={<DeferredModalFallback label="graph guide" />}>
+          <LazyGraphGuideModal
+            visible
+            interfaceZoom={interfaceZoom}
+            onClose={() => setShowGraphGuide(false)}
+            onOpenIssueReport={kind => {
+              setShowGraphGuide(false);
+              setIssueReportKind(kind);
+              setShowIssueReport(true);
+            }}
+          />
+        </Suspense>
       )}
       {showIssueReport && (
-        <IssueReportModal
-          visible
-          interfaceZoom={interfaceZoom}
-          initialKind={issueReportKind}
-          context={issueReportContext}
-          onClose={() => setShowIssueReport(false)}
-        />
+        <Suspense fallback={<DeferredModalFallback label="issue report" />}>
+          <LazyIssueReportModal
+            visible
+            interfaceZoom={interfaceZoom}
+            initialKind={issueReportKind}
+            context={issueReportContext}
+            onClose={() => setShowIssueReport(false)}
+          />
+        </Suspense>
       )}
     </View>
   );
@@ -1139,6 +1239,23 @@ const styles = StyleSheet.create({
   datasetContent: {flex: 1, minHeight: 0},
   center: {flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24},
   loadingText: {color: theme.textDim, marginTop: 14},
+  deferredModalBackdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+  },
+  deferredModalCard: {
+    minWidth: 220,
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 22,
+    borderWidth: 1,
+    borderColor: theme.borderLight,
+    borderRadius: 12,
+    backgroundColor: theme.panel,
+  },
   errorTitle: {color: theme.text, fontSize: 18, fontWeight: '700'},
   errorText: {
     color: theme.textDim,

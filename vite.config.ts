@@ -25,10 +25,12 @@ const CLOUDFLARE_PRODUCTION_DATABASE_ID = 'e6624ef2-8bd9-49e5-8d32-0671351c61c3'
 const CLOUDFLARE_PRODUCTION_DATABASE_NAME = 'minecraft-recipe-tree-production';
 const CLOUDFLARE_PRODUCTION_BUCKET_NAME = 'minecraft-recipe-tree-production-assets';
 
-export default defineConfig(async () => {
+export default defineConfig(async ({command}) => {
   process.env.WRANGLER_WRITE_LOGS ??= 'false';
   process.env.WRANGLER_LOG_PATH ??= '.wrangler/logs';
   process.env.MINIFLARE_REGISTRY_PATH ??= '.wrangler/registry';
+
+  const isLocalDev = command === 'serve' && !isCloudflareBeta && !isCloudflareProduction;
 
   const {cloudflare} = await import('@cloudflare/vite-plugin');
 
@@ -77,7 +79,9 @@ export default defineConfig(async () => {
                     DONATION_SUPABASE_MONTHLY_CENTS,
                   },
                 }
-              : {}),
+              : isLocalDev
+                ? {vars: {BETA_DATA_ORIGIN}}
+                : {}),
           main: './worker/index.ts',
           compatibility_flags: ['nodejs_compat'],
           cache: {enabled: true},
