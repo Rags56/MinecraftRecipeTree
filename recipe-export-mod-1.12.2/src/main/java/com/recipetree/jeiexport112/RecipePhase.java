@@ -404,8 +404,9 @@ final class RecipePhase implements ExportPhase {
         wrapper.getIngredients(recording);
         convertRecorded(recording.allInputs(), data, data.inputs, data.usedKeys, recipeIndex, "input");
         convertRecorded(recording.allOutputs(), data, data.outputs, data.outputKeys, recipeIndex, "output");
-        coalesceFlattenedLogicalAlternatives(data.inputs);
-        coalesceFlattenedLogicalAlternatives(data.catalysts);
+        String categoryUid = safeCurrentUid();
+        coalesceFlattenedLogicalAlternatives(data.inputs, categoryUid);
+        coalesceFlattenedLogicalAlternatives(data.catalysts, categoryUid);
         promoteReturnedIngredients(data);
         rebuildIndexKeys(data);
     }
@@ -589,7 +590,10 @@ final class RecipePhase implements ExportPhase {
      * Reconstruct one alternative slot, while preserving repeated requirements such as
      * A, B, A, B as two slots that each accept A or B.
      */
-    static void coalesceFlattenedLogicalAlternatives(List<SlotData> slots) {
+    static void coalesceFlattenedLogicalAlternatives(List<SlotData> slots, String categoryUid) {
+        if (usesPositionalIngredientSlots(categoryUid)) {
+            return;
+        }
         for (int start = 0; start < slots.size(); ) {
             String identity = slots.get(start).logicalIdentity;
             if (identity == null) {
@@ -616,6 +620,19 @@ final class RecipePhase implements ExportPhase {
             }
             start += requirements;
         }
+    }
+
+    /**
+     * Avaritia's 9x9 recipe wrapper publishes each occupied grid position as an independent
+     * singleton. Broad OreDictionary names such as listAllFood describe the accepted family for
+     * each position; they do not turn adjacent positions into one choose-one ingredient.
+     *
+     * The historical category id is misspelled "Avatitia" in released 1.12 packs. Accept the
+     * corrected spelling as well so the guard remains valid if a fork repairs the id.
+     */
+    static boolean usesPositionalIngredientSlots(String categoryUid) {
+        return "Avatitia.Extreme".equalsIgnoreCase(categoryUid)
+                || "Avaritia.Extreme".equalsIgnoreCase(categoryUid);
     }
 
     private static int repeatedSlotPeriod(List<SlotData> slots) {

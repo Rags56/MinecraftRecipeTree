@@ -5,6 +5,7 @@ import org.junit.Test;
 import java.math.BigDecimal;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class RecipePhaseIngredientSemanticsTest {
     @Test
@@ -14,7 +15,7 @@ public class RecipePhaseIngredientSemanticsTest {
         data.inputs.add(slot("ore:oreIron", "item|abyssalcraft:abyiroore"));
         data.inputs.add(slot("ore:oreIron", "item|cyclicmagic:nether_iron_ore"));
 
-        RecipePhase.coalesceFlattenedLogicalAlternatives(data.inputs);
+        RecipePhase.coalesceFlattenedLogicalAlternatives(data.inputs, "THAUMCRAFT_CRUCIBLE");
 
         assertEquals(1, data.inputs.size());
         assertEquals(3, data.inputs.get(0).pairs.size());
@@ -28,11 +29,34 @@ public class RecipePhaseIngredientSemanticsTest {
         data.inputs.add(slot("ore:oreIron", "item|first:iron_ore"));
         data.inputs.add(slot("ore:oreIron", "item|second:iron_ore"));
 
-        RecipePhase.coalesceFlattenedLogicalAlternatives(data.inputs);
+        RecipePhase.coalesceFlattenedLogicalAlternatives(data.inputs, "THAUMCRAFT_CRUCIBLE");
 
         assertEquals(2, data.inputs.size());
         assertEquals(2, data.inputs.get(0).pairs.size());
         assertEquals(2, data.inputs.get(1).pairs.size());
+    }
+
+    @Test
+    public void preservesIndependentAvaritiaExtremeCraftingGridPositions() {
+        RecipePhase.RecipeData data = new RecipePhase.RecipeData();
+        data.inputs.add(slot("ore:listAllFood", "item|food:first"));
+        data.inputs.add(slot("ore:listAllFood", "item|food:second"));
+        data.inputs.add(slot("ore:listAllFood", "item|food:third"));
+        data.inputs.add(slot("ore:listAllFood", "item|food:fourth"));
+        data.inputs.add(slot("ore:listAllFood", "item|food:fifth"));
+        data.inputs.add(slot("ore:listAllFood", "item|food:sixth"));
+
+        RecipePhase.coalesceFlattenedLogicalAlternatives(data.inputs, "Avatitia.Extreme");
+
+        assertEquals(6, data.inputs.size());
+        for (RecipePhase.SlotData input : data.inputs) {
+            assertEquals(1, input.pairs.size());
+        }
+    }
+
+    @Test
+    public void recognizesCorrectedAvaritiaExtremeCategoryId() {
+        assertTrue(RecipePhase.usesPositionalIngredientSlots("Avaritia.Extreme"));
     }
 
     @Test
