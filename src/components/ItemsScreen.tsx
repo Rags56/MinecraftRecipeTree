@@ -11,6 +11,7 @@ import {
 import {useData} from '../data/DataContext';
 import {
   catalogTypePresentation,
+  isItemCatalogBrowseVisible,
   isItemCatalogEligible,
 } from '../data/catalogPresentation';
 import {useRecipeStages} from '../data/RecipeStageContext';
@@ -125,6 +126,7 @@ export function ItemsScreen({
 
     if (!q) {
       for (const {item} of searchableItems) {
+        if (!isItemCatalogBrowseVisible(item)) continue;
         if (!eligible(item)) continue;
         out.push(item);
         if (out.length >= MAX_RESULTS + 1) break;

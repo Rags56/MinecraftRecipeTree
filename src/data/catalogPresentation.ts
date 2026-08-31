@@ -95,6 +95,28 @@ export function isItemCatalogEligible(item: CatalogItem): boolean {
   );
 }
 
+/**
+ * Keep high-volume supporting ingredient types out of the default item grid.
+ * They remain catalog-eligible so search, recipes, and direct item links can
+ * still surface them normally.
+ */
+export function isItemCatalogBrowseVisible(item: CatalogItem): boolean {
+  const typeLabel = catalogTypePresentation(item.t)?.label;
+  const normalizedId = item.id.toLocaleLowerCase();
+  const itemPath = normalizedId.slice(normalizedId.indexOf(':') + 1);
+  const isEnchantedBook =
+    itemPath === 'enchanted_book' ||
+    itemPath.startsWith('enchanted_book:') ||
+    itemPath.startsWith('enchanted_book[');
+
+  return (
+    typeLabel !== 'Fluid' &&
+    typeLabel !== 'Enchantment' &&
+    typeLabel !== 'Aspect' &&
+    !isEnchantedBook
+  );
+}
+
 export interface CatalogTypePresentation {
   label: string;
   recognized: boolean;

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   catalogTypePresentation,
+  isItemCatalogBrowseVisible,
   isItemCatalogEligible,
   normalizeCatalogItemNames,
   stripMinecraftFormattingCodes,
@@ -115,6 +116,54 @@ test('excludes cover carriers across supported generations', () => {
       true,
     );
   }
+});
+
+test('hides fluids, enchanted books, and aspects only from default catalog browsing', () => {
+  for (const hiddenItem of [
+    item({
+      k: 'fluid|minecraft:water',
+      id: 'minecraft:water',
+      n: 'Water',
+      t: 'fluid',
+    }),
+    item({
+      k: 'custom_example.hybridfluid_12345678|steam',
+      id: 'example:steam',
+      n: 'Steam',
+      t: 'custom_example.hybridfluid_12345678',
+    }),
+    item({
+      k: 'enchant|minecraft:protection:1',
+      id: 'minecraft:protection',
+      n: 'Protection I',
+      t: 'enchant',
+    }),
+    item({
+      k: 'item|minecraft:enchanted_book:[enchantment.minecraft.protection.lvl1]',
+      id: 'minecraft:enchanted_book:[enchantment.minecraft.protection.lvl1]',
+      n: 'Enchanted Book',
+    }),
+    item({
+      k: 'custom_thaumcraft.api.aspects.aspectlist_0409b2e6|aer',
+      id: 'thaumcraft:aer',
+      n: 'Aer',
+      t: 'custom_thaumcraft.api.aspects.aspectlist_0409b2e6',
+    }),
+  ]) {
+    assert.equal(isItemCatalogEligible(hiddenItem), true);
+    assert.equal(isItemCatalogBrowseVisible(hiddenItem), false);
+  }
+
+  assert.equal(isItemCatalogBrowseVisible(item()), true);
+  assert.equal(
+    isItemCatalogBrowseVisible(item({
+      k: 'custom_mekanism.api.gas.gasstack_3b5b153e|oxygen',
+      id: 'mekanism:oxygen',
+      n: 'Oxygen',
+      t: 'custom_mekanism.api.gas.gasstack_3b5b153e',
+    })),
+    true,
+  );
 });
 
 test('uses concise labels for Multiblock Madness custom ingredient types', () => {
