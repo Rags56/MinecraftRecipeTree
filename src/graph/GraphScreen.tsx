@@ -2044,6 +2044,23 @@ export function GraphScreen({
     [bump, onItemTap],
   );
 
+  /**
+   * Collapses the whole tree back to just the root, reusing the exact same byproduct-release
+   * path a single node's collapse (onItemTap, above) uses -- releaseByproductFulfillments already
+   * walks the entire removed subtree, so one call correctly unwinds every descendant's reserved
+   * byproduct credit. Deliberately leaves remembered preferred-source choices untouched, matching
+   * collapseNodeRecipe: clearing the tree isn't the same action as telling the app to forget a
+   * choice (that's unsetNodeRecipe, triggered explicitly per node).
+   */
+  const clearAllExpansions = useCallback(() => {
+    const currentRoot = rootRef.current;
+    if (!currentRoot?.source) return;
+    releaseByproductFulfillmentsFromSubtree(currentRoot);
+    currentRoot.source = undefined;
+    bump();
+    needsFitRef.current = true;
+  }, [bump, releaseByproductFulfillmentsFromSubtree]);
+
   const unsetNodeRecipe = useCallback(
     (node: ItemTreeNode) => {
       const next = {...preferredSourcesRef.current};
@@ -3731,6 +3748,12 @@ export function GraphScreen({
                 setTreeTransferMode('share');
                 setShowTreeShare(true);
               }}
+            />
+            <CtrlBtn
+              label="Clear all"
+              accessibilityLabel="Collapse every expanded branch back to the root item"
+              metricsId="graph.control.clear-all"
+              onPress={clearAllExpansions}
             />
           </View>
         )}
