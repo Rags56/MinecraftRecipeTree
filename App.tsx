@@ -57,6 +57,7 @@ import {clearGraphSession, loadGraphSession} from './src/graph/graphSession';
 import type {RecipeImportReport} from './src/graph/RecipeImportDetailsModal';
 import {UserProvider, useUser} from './src/account/UserContext';
 import {ThemePreferenceProvider, useThemePreference} from './src/ui/themePreference';
+import {hasSeenOnboarding, markOnboardingSeen} from './src/ui/onboarding';
 
 const LazyGraphScreen = React.lazy(async () => {
   const module = await import('./src/graph/GraphScreen');
@@ -81,6 +82,11 @@ const LazyGraphGuideModal = React.lazy(async () => {
 const LazyIssueReportModal = React.lazy(async () => {
   const module = await import('./src/components/IssueReportModal');
   return {default: module.IssueReportModal};
+});
+
+const LazyWelcomeModal = React.lazy(async () => {
+  const module = await import('./src/components/WelcomeModal');
+  return {default: module.WelcomeModal};
 });
 
 const LazyMobsScreen = React.lazy(async () => {
@@ -482,6 +488,13 @@ function Shell({
   const [showRecipeStages, setShowRecipeStages] = useState(false);
   const [showGraphGuide, setShowGraphGuide] = useState(false);
   const [showIssueReport, setShowIssueReport] = useState(false);
+  // Starts closed and only opens from an effect (never from the initial render) so a first-time
+  // visitor's client render can't diverge from the statically prerendered server HTML, which has
+  // no window/localStorage to check against and would otherwise always render this as closed.
+  const [showWelcome, setShowWelcome] = useState(false);
+  useEffect(() => {
+    if (!hasSeenOnboarding()) setShowWelcome(true);
+  }, []);
   const [hasVisitedMobs, setHasVisitedMobs] = useState(tab === 'mobs');
   const [showInfoMenu, setShowInfoMenu] = useState(false);
   const [showAppMenu, setShowAppMenu] = useState(false);
@@ -497,7 +510,9 @@ function Shell({
   const [showGraphControls, setShowGraphControls] = useState(false);
   const [interfaceZoom, setInterfaceZoom] = useState(1);
   const [contentZoom, setContentZoom] = useState(1);
-  const shellSurface = showSignIn
+  const shellSurface = showWelcome
+    ? 'welcome'
+    : showSignIn
       ? 'sign-in'
       : showAccount
       ? 'account'
@@ -516,7 +531,7 @@ function Shell({
             : tab;
   useSignalSurface(
     shellSurface,
-    showSignIn || showAccount || showDonations || showFavorites || showRecipeStages || showGraphGuide || showIssueReport || showRecipeHistory
+    showWelcome || showSignIn || showAccount || showDonations || showFavorites || showRecipeStages || showGraphGuide || showIssueReport || showRecipeHistory
       ? 'modal'
       : 'screen',
   );
@@ -1134,6 +1149,18 @@ function Shell({
             initialKind={issueReportKind}
             context={issueReportContext}
             onClose={() => setShowIssueReport(false)}
+          />
+        </Suspense>
+      )}
+      {showWelcome && (
+        <Suspense fallback={<DeferredModalFallback label="welcome" />}>
+          <LazyWelcomeModal
+            visible
+            interfaceZoom={interfaceZoom}
+            onClose={() => {
+              setShowWelcome(false);
+              markOnboardingSeen();
+            }}
           />
         </Suspense>
       )}
