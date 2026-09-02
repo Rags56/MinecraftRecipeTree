@@ -10,6 +10,20 @@ const CORE_IMAGE_ROUTE =
 const PREVIEW_IMAGE_ROUTE =
   /^\/dataset\/preview-sets\/([a-f0-9]{64})\/assets\/s\/(\d+)-(\d+)-(\d+)\.webp$/;
 
+// Content-hashed app bundle chunks and content-addressed dataset export documents (manifest,
+// items, index, recipes, category files -- but not the packed image binaries or sprite
+// coordinates above, which already have their own cache) are immutable for the life of their URL,
+// so a plain cache-first strategy is always safe: the URL itself changes if the content does.
+const IMMUTABLE_CONTENT_CACHE = 'minecraft-recipe-tree-immutable-content-v1';
+const MAX_IMMUTABLE_CONTENT_BYTES = 96 * 1024 * 1024;
+const APP_ASSET_ROUTE = /^\/assets\/[^/]+\.(?:js|css)$/;
+const CORE_EXPORT_DOCUMENT_ROUTE =
+  /^\/dataset\/publications\/[a-f0-9]{64}\/exports\/(?!assets\/(?:s\/|pack-)).+$/;
+const PREVIEW_EXPORT_DOCUMENT_ROUTE =
+  /^\/dataset\/preview-sets\/[a-f0-9]{64}\/(?!assets\/(?:s\/|pack-)).+$/;
+
+const pendingImmutableContent = new Map();
+
 const memoryPacks = new Map();
 const pendingPacks = new Map();
 let memoryPackBytes = 0;
@@ -130,6 +144,65 @@ async function prunePersistentPacks(cache) {
   }
 }
 
+function isImmutableContentRequest(url) {
+  return (
+    APP_ASSET_ROUTE.test(url.pathname) ||
+    CORE_EXPORT_DOCUMENT_ROUTE.test(url.pathname) ||
+    PREVIEW_EXPORT_DOCUMENT_ROUTE.test(url.pathname)
+  );
+}
+
+// Cache.keys() returns entries in insertion order, so the oldest entries are pruned first.
+async function pruneImmutableContent(cache) {
+  const keys = await cache.keys();
+  const entries = await Promise.all(
+    keys.map(async request => {
+      const response = await cache.match(request);
+      const length = Number(response?.headers.get('content-length'));
+      return {request, bytes: Number.isSafeInteger(length) && length >= 0 ? length : 0};
+    }),
+  );
+  let totalBytes = entries.reduce((sum, entry) => sum + entry.bytes, 0);
+  for (const entry of entries) {
+    if (totalBytes <= MAX_IMMUTABLE_CONTENT_BYTES) break;
+    if (!(await cache.delete(entry.request))) {
+      console.error('An expired immutable content cache entry could not be removed.');
+      continue;
+    }
+    totalBytes -= entry.bytes;
+  }
+}
+
+async function immutableContentResponse(request) {
+  const cache = await caches.open(IMMUTABLE_CONTENT_CACHE);
+  const cached = await cache.match(request);
+  if (cached) return cached;
+
+  const cacheKey = request.url;
+  let operation = pendingImmutableContent.get(cacheKey);
+  if (!operation) {
+    operation = (async () => {
+      const response = await fetch(request, {cache: 'no-store'});
+      if (response.ok) {
+        try {
+          await cache.put(request, response.clone());
+          await pruneImmutableContent(cache);
+        } catch (error) {
+          console.error('Immutable content could not be cached; it was still served.', {
+            url: request.url,
+            error,
+          });
+        }
+      }
+      return response;
+    })().finally(() => {
+      pendingImmutableContent.delete(cacheKey);
+    });
+    pendingImmutableContent.set(cacheKey, operation);
+  }
+  return (await operation).clone();
+}
+
 async function loadPack(packUrl) {
   const remembered = memoryPacks.get(packUrl);
   if (remembered) {
@@ -232,6 +305,10 @@ self.addEventListener('fetch', event => {
   const coordinate = packedCoordinate(url);
   if (coordinate) {
     event.respondWith(packedImageResponse(coordinate));
+    return;
+  }
+  if (isImmutableContentRequest(url)) {
+    event.respondWith(immutableContentResponse(event.request));
     return;
   }
   if (!url.pathname.startsWith(LOCAL_PACK_ROUTE_PREFIX)) return;

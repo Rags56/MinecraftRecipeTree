@@ -23,7 +23,7 @@ const MAX_LOCAL_PACKS = 24;
 const MAX_LOCAL_FILE_BYTES = 128 * 1024 * 1024;
 const LOCAL_CATALOG_FORMAT = 1;
 const LOCAL_INVENTORY_FORMAT = 1;
-const VIEWER_SERVICE_WORKER_URL = '/local-pack-sw.js?v=packed-images-v1';
+const VIEWER_SERVICE_WORKER_URL = '/local-pack-sw.js?v=packed-images-and-shell-v1';
 export const LOCAL_PACK_CATALOG_CHANGED_EVENT = 'mrt:local-pack-catalog-changed';
 
 interface LocalPackRecord extends DatasetDescriptor {
