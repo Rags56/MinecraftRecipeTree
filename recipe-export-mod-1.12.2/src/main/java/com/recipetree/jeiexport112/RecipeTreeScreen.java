@@ -3941,7 +3941,7 @@ public final class RecipeTreeScreen extends GuiScreen {
             fontRenderer.drawString(
                     comparisonIndex == null
                             ? "Newest first - left click to open; right click to compare; x deletes"
-                            : "Right click another tree to compare recipe choices",
+                            : "Right click another tree to compare Types, Materials, and Byproducts",
                     16, height - 24, 0xFFBFC8BD);
             super.drawScreen(mouseX, mouseY, partialTicks);
             drawScrollbar(width - 11, viewTop, viewBottom, scroll, contentHeight);
@@ -3999,6 +3999,12 @@ public final class RecipeTreeScreen extends GuiScreen {
         private final GuiScreen parent;
         private final RecipeTreeProgress.RecipeHistoryEntry leftEntry;
         private final RecipeTreeProgress.RecipeHistoryEntry rightEntry;
+        private final List<List<RecipeTreeComparison.Difference>> lists =
+                new ArrayList<List<RecipeTreeComparison.Difference>>();
+        private final int[] scrollRows = new int[3];
+        private final boolean compareUsingByproducts = useByproducts;
+        private int selectedTab;
+        private String failure;
 
         private TreeComparisonScreen(
                 GuiScreen parent,
@@ -4007,17 +4013,44 @@ public final class RecipeTreeScreen extends GuiScreen {
             this.parent = parent;
             this.leftEntry = leftEntry;
             this.rightEntry = rightEntry;
+            try {
+                RecipeTreeModel a = RecipeTreeModel.restoreForComparison(bridge, leftEntry);
+                RecipeTreeModel b = RecipeTreeModel.restoreForComparison(bridge, rightEntry);
+                if (a == null || b == null) throw new IllegalStateException("A saved tree is unavailable in this pack");
+                RecipeTreeModel.Summary left = a.summarize(compareUsingByproducts);
+                RecipeTreeModel.Summary right = b.summarize(compareUsingByproducts);
+                lists.add(RecipeTreeComparison.differences(RecipeTreeComparison.types(left), RecipeTreeComparison.types(right)));
+                lists.add(RecipeTreeComparison.differences(RecipeTreeComparison.items(left.materials), RecipeTreeComparison.items(right.materials)));
+                lists.add(RecipeTreeComparison.differences(RecipeTreeComparison.items(left.byproducts), RecipeTreeComparison.items(right.byproducts)));
+            } catch (RuntimeException error) {
+                failure = "Cannot compare complete trees: " + error.getMessage();
+                JeiExportMod.LOGGER.error("[jeiexport] Could not compare saved trees {} and {}",
+                        historyName(leftEntry), historyName(rightEntry), error);
+            }
         }
 
         @Override
         public void initGui() {
             buttonList.clear();
             buttonList.add(new GuiButton(501, width - 92, height - 30, 80, 20, "Back"));
+            int tabWidth = Math.min(102, (width - 36) / 3);
+            for (int index = 0; index < 3; index++) {
+                String label = SummaryTab.values()[index].label;
+                String counted = label + (failure == null ? " (" + lists.get(index).size() + ")" : "");
+                GuiButton tab = new GuiButton(502 + index, 18 + index * tabWidth, 70, tabWidth - 4, 20,
+                        fontRenderer.getStringWidth(counted) <= tabWidth - 12 ? counted : label);
+                tab.enabled = failure == null && index != selectedTab;
+                buttonList.add(tab);
+            }
         }
 
         @Override
         protected void actionPerformed(GuiButton button) throws IOException {
             if (button.id == 501) mc.displayGuiScreen(parent);
+            else if (button.id >= 502 && button.id <= 504) {
+                selectedTab = button.id - 502;
+                initGui();
+            }
         }
 
         @Override
@@ -4028,21 +4061,68 @@ public final class RecipeTreeScreen extends GuiScreen {
             fontRenderer.drawString("Compare recipe trees", 18, 20, 0xFFF0F0F0);
             String leftName = historyName(leftEntry);
             String rightName = historyName(rightEntry);
-            fontRenderer.drawString(leftName, 20, 48, 0xFFB9D8B3);
-            fontRenderer.drawString(rightName, width / 2 + 10, 48, 0xFFB9D8B3);
-            List<String> differences = comparisonDifferences(leftEntry, rightEntry);
-            int y = 76;
-            if (differences.isEmpty()) {
-                fontRenderer.drawString("No recipe selections changed", 20, y, 0xFFC4CDC1);
+            fontRenderer.drawString(trim("A: " + leftName + " x" + leftEntry.getAmount(), width / 2 - 30), 20, 40, 0xFFB9D8B3);
+            fontRenderer.drawString(trim("B: " + rightName + " x" + rightEntry.getAmount(), width / 2 - 30), width / 2 + 10, 40, 0xFFB9D8B3);
+            fontRenderer.drawString(trim("Byproduct usage: " + (compareUsingByproducts ? "ON" : "OFF")
+                    + " - comparing saved amounts", width - 40), 20, 55, 0xFFADB9AA);
+            if (failure != null) {
+                fontRenderer.drawSplitString(failure, 20, 108, width - 40, 0xFFFFAAAA);
             } else {
-                for (String difference : differences) {
-                    if (y + 12 > height - 38) break;
-                    fontRenderer.drawString(trim(difference, width - 40), 20, y,
-                            0xFFE4E7E2);
-                    y += 13;
+                List<RecipeTreeComparison.Difference> differences = lists.get(selectedTab);
+                int aRight = width * 60 / 100;
+                int bRight = width * 77 / 100;
+                int deltaRight = width - 24;
+                fontRenderer.drawString(selectedTab == 0 ? "Recipe type" : "Item / resource", 20, 100, 0xFFE4E7E2);
+                comparisonNumber("A", aRight, 100, 0xFFE4E7E2);
+                comparisonNumber("B", bRight, 100, 0xFFE4E7E2);
+                comparisonNumber("B - A", deltaRight, 100, 0xFFE4E7E2);
+                int visible = Math.max(0, (height - 42 - 116) / 24);
+                int maximum = summaryMaximumScroll(differences.size(), visible);
+                scrollRows[selectedTab] = clamp(scrollRows[selectedTab], 0, maximum);
+                RecipeTreeComparison.Difference hovered = null;
+                if (differences.isEmpty()) fontRenderer.drawString("No differences in this list", 20, 122, 0xFFB9D8B3);
+                for (int index = scrollRows[selectedTab]; index < differences.size()
+                        && index < scrollRows[selectedTab] + visible; index++) {
+                    RecipeTreeComparison.Difference row = differences.get(index);
+                    int y = 116 + (index - scrollRows[selectedTab]) * 24;
+                    boolean over = contains(18, y, width - 38, 22, mouseX, mouseY);
+                    Gui.drawRect(18, y, width - 20, y + 22, over ? 0xFF35473B : 0x552B382F);
+                    if (row.entry.icon != null) safeRenderIngredient(row.entry.icon, 22, y + 3, "comparison");
+                    fontRenderer.drawString(trim(row.entry.name, width * 40 / 100 - 44), 44, y + 7, 0xFFE4E7E2);
+                    comparisonNumber(trim(RecipeTreeModel.formatAmount(row.left), width * 16 / 100), aRight, y + 7, 0xFFE4E7E2);
+                    comparisonNumber(trim(RecipeTreeModel.formatAmount(row.right), width * 16 / 100), bRight, y + 7, 0xFFE4E7E2);
+                    String change = (row.change.signum() > 0 ? "+" : "") + RecipeTreeModel.formatAmount(row.change);
+                    comparisonNumber(trim(change, width * 16 / 100), deltaRight, y + 7,
+                            row.change.signum() > 0 ? 0xFFF0C879 : 0xFF8BCBE8);
+                    if (over) hovered = row;
+                }
+                if (visible > 0) drawScrollbar(width - 16, 116, 116 + visible * 24,
+                        scrollRows[selectedTab] * 24, differences.size() * 24);
+                if (hovered != null) {
+                    List<String> tooltip = new ArrayList<String>();
+                    if (hovered.entry.icon != null) tooltip.addAll(safeTooltip(hovered.entry.icon, "comparison-tooltip"));
+                    else tooltip.add(hovered.entry.name);
+                    tooltip.add("A: " + RecipeTreeModel.formatAmount(hovered.left));
+                    tooltip.add("B: " + RecipeTreeModel.formatAmount(hovered.right));
+                    tooltip.add("Change (B - A): " + (hovered.change.signum() > 0 ? "+" : "")
+                            + RecipeTreeModel.formatAmount(hovered.change));
+                    drawHoveringText(tooltip, mouseX, mouseY);
                 }
             }
             super.drawScreen(mouseX, mouseY, partialTicks);
+        }
+
+        private void comparisonNumber(String text, int right, int y, int color) {
+            fontRenderer.drawString(text, right - fontRenderer.getStringWidth(text), y, color);
+        }
+
+        @Override
+        public void handleMouseInput() throws IOException {
+            super.handleMouseInput();
+            if (failure != null) return;
+            int visible = Math.max(0, (height - 42 - 116) / 24);
+            scrollRows[selectedTab] = scrollSummaryRows(scrollRows[selectedTab], Mouse.getEventDWheel(),
+                    summaryMaximumScroll(lists.get(selectedTab).size(), visible));
         }
 
         @Override
@@ -4158,37 +4238,6 @@ public final class RecipeTreeScreen extends GuiScreen {
             if (name != null && !name.isEmpty()) return name;
         }
         return entry == null ? "Unavailable tree" : entry.getItemIdentity();
-    }
-
-    private List<String> comparisonDifferences(
-            RecipeTreeProgress.RecipeHistoryEntry left,
-            RecipeTreeProgress.RecipeHistoryEntry right) {
-        Map<String, String> leftRecipes = selectionMap(left);
-        Map<String, String> rightRecipes = selectionMap(right);
-        Set<String> paths = new HashSet<String>();
-        paths.addAll(leftRecipes.keySet());
-        paths.addAll(rightRecipes.keySet());
-        List<String> differences = new ArrayList<String>();
-        for (String path : paths) {
-            String leftRecipe = leftRecipes.get(path);
-            String rightRecipe = rightRecipes.get(path);
-            if (leftRecipe == null ? rightRecipe == null : leftRecipe.equals(rightRecipe)) continue;
-            differences.add(path + ": " + String.valueOf(leftRecipe) + " -> "
-                    + String.valueOf(rightRecipe));
-        }
-        Collections.sort(differences);
-        return differences;
-    }
-
-    private static Map<String, String> selectionMap(
-            RecipeTreeProgress.RecipeHistoryEntry entry) {
-        Map<String, String> values = new HashMap<String, String>();
-        if (entry == null) return values;
-        for (RecipeTreeProgress.RecipeHistorySelection selection : entry.getSelections()) {
-            values.put(selection.getRootIndex() + ":" + selection.getPath() + ":"
-                    + selection.getIngredientName(), selection.getRecipeIdentity());
-        }
-        return values;
     }
 
     private static final class ScreenRect {

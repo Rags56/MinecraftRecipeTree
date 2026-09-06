@@ -30,6 +30,40 @@ import static org.junit.Assert.assertTrue;
 
 public class RecipeTreeModelSafetyTest {
     @Test
+    public void comparisonUsesAllThreeSidebarSummaryQuantities() throws Exception {
+        RecipeTreeViewerBridge.Ingredient root = ingredient("item|example:root", 1);
+        RecipeTreeViewerBridge.Ingredient input = ingredient("item|example:input", 3);
+        RecipeTreeViewerBridge.Ingredient extra = ingredient("item|example:extra", 2);
+        RecipeTreeModel model = model(root, 1);
+        assertTrue(model.setRecipe(model.getPrimaryRoot(), recipe("comparison",
+                Collections.singletonList(slot(input)), Arrays.asList(slot(root), slot(extra))), false));
+        RecipeTreeModel.Summary a = model.summarize(false);
+        model.setPrimaryAmount(4);
+        RecipeTreeModel.Summary b = model.summarize(false);
+        assertAmount("3", RecipeTreeComparison.differences(
+                RecipeTreeComparison.types(a), RecipeTreeComparison.types(b)).get(0).change);
+        assertAmount("9", RecipeTreeComparison.differences(
+                RecipeTreeComparison.items(a.materials), RecipeTreeComparison.items(b.materials)).get(0).change);
+        assertAmount("6", RecipeTreeComparison.differences(
+                RecipeTreeComparison.items(a.byproducts), RecipeTreeComparison.items(b.byproducts)).get(0).change);
+    }
+
+    @Test(expected = IllegalStateException.class)
+    @SuppressWarnings("unchecked")
+    public void comparisonRejectsMissingSavedNodesInsteadOfShowingPartialTotals() throws Exception {
+        RecipeTreeViewerBridge bridge = bridge();
+        RecipeTreeViewerBridge.Ingredient root = ingredient("item|example:root", 1);
+        java.lang.reflect.Field field = RecipeTreeViewerBridge.class.getDeclaredField("ingredientsByKey");
+        field.setAccessible(true);
+        ((java.util.Map<String, RecipeTreeViewerBridge.Ingredient>) field.get(bridge)).put(root.getKey(), root);
+        RecipeTreeProgress.RecipeHistoryEntry entry = new RecipeTreeProgress.RecipeHistoryEntry(
+                root.getKey(), null, 1, false, 1, null,
+                Collections.singletonList(new RecipeTreeProgress.RecipeHistorySelection(
+                        0, Collections.singletonList(0), "missing-child", "Missing child", null, null)), false);
+        RecipeTreeModel.restoreForComparison(bridge, entry);
+    }
+
+    @Test
     public void aspectSourceYieldDividesDemandInsteadOfMultiplyingIt() throws Exception {
         RecipeTreeViewerBridge.Ingredient source = ingredient("item|example:opal_block", 27);
         RecipeTreeViewerBridge.Ingredient aspect = ingredient("aspect|luna", 1);

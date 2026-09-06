@@ -3,6 +3,17 @@
 This file contains release-ready notes for the Minecraft exporter builds. The generated exporter
 manifest remains the source of truth for downloadable filenames, checksums, and compatibility.
 
+## 2026-09-06
+
+### Compare tree summary lists
+
+- Forge HEI/JEI 1.12.2 beta: **1.2.0-beta.128**
+- Replace raw recipe-identity differences with Types, Materials, and Byproducts tabs.
+- Show changed entries with icons, both saved trees' quantities, and signed B minus A differences.
+- Use the same totals and byproduct-usage setting as the sidebar, with independent tab scrolling.
+- Restore saved choices without changing favorites or reusable preferences; report incomplete
+  restoration instead of presenting partial totals as a complete comparison.
+
 ## 2026-09-05
 
 ### Scrollable tree sidebar tabs

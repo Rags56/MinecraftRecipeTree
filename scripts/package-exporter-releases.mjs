@@ -84,9 +84,9 @@ export const EXPORTER_RELEASE_DEFINITIONS = Object.freeze([
     minecraftVersion: '1.12.2',
     recipeViewer: 'HEI/JEI 4',
     loader: 'Forge 14.23.5',
-    version: '1.2.0-beta.127',
-    source: 'recipe-export-mod-1.12.2/build/libs/recipe-export-mod-1.12.2-1.2.0-beta.127.jar',
-    filename: 'recipe-tree-exporter-forge-1.12.2-1.2.0-beta.127.jar',
+    version: '1.2.0-beta.128',
+    source: 'recipe-export-mod-1.12.2/build/libs/recipe-export-mod-1.12.2-1.2.0-beta.128.jar',
+    filename: 'recipe-tree-exporter-forge-1.12.2-1.2.0-beta.128.jar',
     qualityProfiles: Object.freeze(['meatballcraft-1.12.2', 'multiblock-madness-1.12.2']),
     artifactProvenance: Object.freeze({
       format: 'mrt-exporter-build-v1',
