@@ -93,4 +93,26 @@ public class RecipeHistoryEditsTest {
                 "saved version 1", "saved version 2", "working version 3"), history);
         assertEquals(2, selected);
     }
+
+    @Test
+    public void deletingAnOlderEntryKeepsTheCurrentEntrySelected() {
+        List<String> history = new ArrayList<String>(Arrays.asList(
+                "older", "current", "newer"));
+
+        int selected = RecipeHistoryEdits.delete(history, 1, 0);
+
+        assertEquals(Arrays.asList("current", "newer"), history);
+        assertEquals(0, selected);
+    }
+
+    @Test
+    public void deletingTheCurrentEntryDetachesTheOpenTreeFromHistory() {
+        List<String> history = new ArrayList<String>(Arrays.asList(
+                "older", "current", "newer"));
+
+        int selected = RecipeHistoryEdits.delete(history, 1, 1);
+
+        assertEquals(Arrays.asList("older", "newer"), history);
+        assertEquals(-1, selected);
+    }
 }

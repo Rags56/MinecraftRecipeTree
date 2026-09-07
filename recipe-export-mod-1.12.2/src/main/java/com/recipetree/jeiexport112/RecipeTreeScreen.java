@@ -111,6 +111,8 @@ public final class RecipeTreeScreen extends GuiScreen {
     private boolean useByproducts = true;
     private boolean recipeBookMode;
     private SummaryTab summaryTab = SummaryTab.TYPES;
+    private final int[] summaryScrollRows = new int[SummaryTab.values().length];
+    private int summaryMaximumScroll;
     private String selectedProcessKey;
     private String status = "";
 
@@ -755,12 +757,37 @@ public final class RecipeTreeScreen extends GuiScreen {
             top += 28;
         }
         RecipeTreeModel.Summary summary = model.summarize(useByproducts);
+        int rowHeight = summaryTab == SummaryTab.TYPES ? 24
+                : summaryTab == SummaryTab.MATERIALS ? 22 : 30;
+        int rowCount = summaryTab == SummaryTab.TYPES ? summary.processes.size()
+                : summaryTab == SummaryTab.MATERIALS ? summary.materials.size()
+                : (summary.byproducts.size() + byproductColumns() - 1) / byproductColumns();
+        int visibleRows = Math.max(0, (treeBottom - top) / rowHeight);
+        summaryMaximumScroll = summaryMaximumScroll(rowCount, visibleRows);
+        int tabIndex = summaryTab.ordinal();
+        summaryScrollRows[tabIndex] = clamp(summaryScrollRows[tabIndex], 0, summaryMaximumScroll);
         if (summaryTab == SummaryTab.TYPES) drawProcesses(summary.processes, top, mouseX, mouseY);
         else if (summaryTab == SummaryTab.MATERIALS) {
             drawSummaryList(summary.materials, top, mouseX, mouseY, false);
         } else {
             drawByproductGrid(summary.byproducts, top, mouseX, mouseY);
         }
+        if (visibleRows > 0) {
+            drawScrollbar(panelRight - 14, top, top + visibleRows * rowHeight,
+                    summaryScrollRows[tabIndex] * rowHeight, rowCount * rowHeight);
+        }
+    }
+
+    static int summaryMaximumScroll(int rowCount, int visibleRows) {
+        return Math.max(0, rowCount - Math.max(1, visibleRows));
+    }
+
+    static int scrollSummaryRows(int current, int wheel, int maximum) {
+        return clamp(current + (wheel < 0 ? 3 : wheel > 0 ? -3 : 0), 0, maximum);
+    }
+
+    private static int byproductColumns() {
+        return Math.max(1, (SUMMARY_WIDTH - 16) / 30);
     }
 
     private int drawSummaryPreview(int mouseX, int mouseY) {
@@ -843,8 +870,10 @@ public final class RecipeTreeScreen extends GuiScreen {
             int mouseX,
             int mouseY) {
         int y = top;
-        for (RecipeTreeModel.ProcessSummary process : processes) {
+        for (int index = summaryScrollRows[SummaryTab.TYPES.ordinal()];
+             index < processes.size(); index++) {
             if (y + 24 > treeBottom) break;
+            RecipeTreeModel.ProcessSummary process = processes.get(index);
             boolean hovered = mouseX >= summaryLeft + 5 && mouseX < panelRight - 15
                     && mouseY >= y && mouseY < y + 22;
             boolean selected = process.key.equals(selectedProcessKey);
@@ -877,8 +906,10 @@ public final class RecipeTreeScreen extends GuiScreen {
             int mouseY,
             boolean byproduct) {
         int y = top;
-        for (RecipeTreeModel.SummaryEntry entry : entries) {
+        for (int index = summaryScrollRows[SummaryTab.MATERIALS.ordinal()];
+             index < entries.size(); index++) {
             if (y + 22 > treeBottom) break;
+            RecipeTreeModel.SummaryEntry entry = entries.get(index);
             safeRenderIngredient(entry.ingredient, summaryLeft + 9, y + 3,
                     byproduct ? "byproduct-list" : "material-list");
             String name = trim(entry.ingredient.getDisplayName(), SUMMARY_WIDTH - 72);
@@ -896,12 +927,13 @@ public final class RecipeTreeScreen extends GuiScreen {
             int mouseX,
             int mouseY) {
         int cell = 30;
-        int columns = Math.max(1, (SUMMARY_WIDTH - 16) / cell);
-        for (int index = 0; index < entries.size(); index++) {
+        int columns = byproductColumns();
+        int firstRow = summaryScrollRows[SummaryTab.BYPRODUCTS.ordinal()];
+        for (int index = firstRow * columns; index < entries.size(); index++) {
             int column = index % columns;
             int row = index / columns;
             int left = summaryLeft + 7 + column * cell;
-            int y = top + row * cell;
+            int y = top + (row - firstRow) * cell;
             if (y + cell > treeBottom) break;
             RecipeTreeModel.SummaryEntry entry = entries.get(index);
             Gui.drawRect(left, y, left + cell - 3, y + cell - 3, 0x66324635);
@@ -1029,6 +1061,13 @@ public final class RecipeTreeScreen extends GuiScreen {
         if (wheel == 0) return;
         int mouseX = Mouse.getEventX() * width / mc.displayWidth;
         int mouseY = height - Mouse.getEventY() * height / mc.displayHeight - 1;
+        if (contains(summaryLeft, treeTop, panelRight - 10 - summaryLeft,
+                treeBottom - treeTop, mouseX, mouseY)) {
+            int tabIndex = summaryTab.ordinal();
+            summaryScrollRows[tabIndex] = scrollSummaryRows(
+                    summaryScrollRows[tabIndex], wheel, summaryMaximumScroll);
+            return;
+        }
         if (amountField != null && contains(
                 amountField.x, amountField.y, amountField.width, amountField.height,
                 mouseX, mouseY)) {
@@ -1311,6 +1350,18 @@ public final class RecipeTreeScreen extends GuiScreen {
         openHistoryEntry(next);
     }
 
+    private void deleteHistoryEntry(int index) {
+        if (index < 0 || index >= history.size()) return;
+        historyIndex = RecipeHistoryEdits.delete(history, historyIndex, index);
+        RecipeTreeProgress.RecipeHistoryEntry lastViewed = historyIndex >= 0
+                && historyIndex < history.size()
+                ? history.get(historyIndex)
+                : history.isEmpty() ? null : history.get(history.size() - 1);
+        progress.replaceRecipeHistory(history, lastViewed);
+        updateButtonLabels();
+        status = "Deleted history item";
+    }
+
     private void openHistoryEntry(int index) {
         RecipeTreeProgress.RecipeHistoryEntry entry = history.get(index);
         RecipeTreeModel restored = RecipeTreeModel.restore(bridge, progress, entry);
@@ -1590,9 +1641,11 @@ public final class RecipeTreeScreen extends GuiScreen {
         JerMobRenderCompat.ScopeToken jerScope =
                 JerMobRenderCompat.begin(recipe.getCategoryUid(), left, top, scale);
         RecipeTreeViewerBridge.NativeRenderScope nativeRenderScope = null;
+        ModularMachineryPreviewScope structurePreviewScope = null;
         GlStateManager.pushMatrix();
         try {
             nativeRenderScope = bridge.beginNativeRender(recipe, client);
+            structurePreviewScope = bridge.beginStructurePreview(recipe, client, left, top, scale);
             GlStateManager.translate(left, top, 0);
             GlStateManager.scale(scale, scale, 1F);
             drawable.setPosition(0, 0);
@@ -1604,6 +1657,7 @@ public final class RecipeTreeScreen extends GuiScreen {
             logRenderFailure("recipe:" + recipe.getKey(), error);
             nativeRecipeDrawFailures.add(recipe.getKey());
         } finally {
+            if (structurePreviewScope != null) structurePreviewScope.close();
             if (nativeRenderScope != null) {
                 nativeRenderScope.close();
             }
@@ -1649,7 +1703,7 @@ public final class RecipeTreeScreen extends GuiScreen {
             safeRenderIngredient(input, 7, 7, "thaumic-aspect-source-input");
             safeRenderIngredient(output, 55, 7, "thaumic-aspect-source-output");
             fontRenderer.drawString(">", 36, 10, 0xFF777777);
-            String amount = RecipeTreeModel.formatAmount(input.getAmount());
+            String amount = RecipeTreeModel.formatAmount(output.getAmount());
             fontRenderer.drawString(amount, 15 - fontRenderer.getStringWidth(amount) / 2,
                     27, 0xFF4A4A4A);
         } finally {
@@ -1732,8 +1786,94 @@ public final class RecipeTreeScreen extends GuiScreen {
             RecipeTreeViewerBridge.Ingredient source) {
         if (recipe == null || source == null || !recipe.isSelectedAspectSource()) return false;
         RecipeTreeViewerBridge.Ingredient selected = firstIngredient(recipe.getInputs());
+        RecipeTreeViewerBridge.Ingredient output = firstIngredient(recipe.getOutputs());
         return selected != null && selected.getKey().equals(source.getKey())
-                && selected.getAmount().compareTo(source.getAmount()) == 0;
+                && output != null && output.getAmount().compareTo(source.getAmount()) == 0;
+    }
+
+    private static final int ASPECT_CORNER_SIZE = 16;
+
+    private void drawAspectSourceCorner(int left, int top, int width, int height) {
+        int right = left + width;
+        int bottom = top + height;
+        for (int row = 0; row < ASPECT_CORNER_SIZE; row++) {
+            Gui.drawRect(right - row - 1, bottom - ASPECT_CORNER_SIZE + row,
+                    right, bottom - ASPECT_CORNER_SIZE + row + 1, 0xFF14231F);
+        }
+        fontRenderer.drawString("+", right - 7, bottom - 9, 0xFFF2F7EF);
+    }
+
+    private void drawAspectSourceByproductTooltip(
+            AspectSourceHitbox source, int mouseX, int mouseY,
+            int screenWidth, int screenHeight) {
+        int cellWidth = 24;
+        List<RecipeTreeViewerBridge.Ingredient> aspects =
+                source.page.getAspectSourceOutputs(source.ingredient);
+        int rowWidth = aspects.size() * cellWidth + 8;
+        float scale = Math.min(1F, (screenWidth - 8F) / rowWidth);
+        int tooltipWidth = (int) Math.ceil(rowWidth * scale);
+        int tooltipHeight = (int) Math.ceil(24 * scale);
+        int x = mouseX + 12;
+        if (x + tooltipWidth > screenWidth - 4) x = mouseX - tooltipWidth - 12;
+        x = Math.max(4, Math.min(x, screenWidth - tooltipWidth - 4));
+        int y = Math.max(4, Math.min(mouseY - 12, screenHeight - tooltipHeight - 4));
+        GlStateManager.pushMatrix();
+        try {
+            GlStateManager.translate(x, y, 300F);
+            GlStateManager.scale(scale, scale, 1F);
+            GlStateManager.disableDepth();
+            Gui.drawRect(0, 0, rowWidth, 24, 0xFF62547A);
+            Gui.drawRect(1, 1, rowWidth - 1, 23, 0xF0100010);
+            for (int index = 0; index < aspects.size(); index++) {
+                RecipeTreeViewerBridge.Ingredient aspect = aspects.get(index);
+                int center = 4 + index * cellWidth + cellWidth / 2;
+                safeRenderIngredient(aspect, center - 8, 4,
+                        "thaumic-aspect-grid-byproduct");
+                GlStateManager.disableDepth();
+            }
+        } finally {
+            GlStateManager.popMatrix();
+            restoreGuiRenderState();
+        }
+    }
+
+    static boolean pickerRecipeMatchesSearch(
+            RecipeTreeViewerBridge.Recipe recipe,
+            String normalizedQuery) {
+        if (recipe == null || normalizedQuery == null || normalizedQuery.isEmpty()) return true;
+        if (searchMatches(recipe.getCategoryTitle(), normalizedQuery)
+                || pickerIngredientMatchesSearch(
+                        recipe.getCatalystMachine(), normalizedQuery)) {
+            return true;
+        }
+        return slotsMatchSearch(recipe.getInputs(), normalizedQuery)
+                || slotsMatchSearch(recipe.getOutputs(), normalizedQuery);
+    }
+
+    static boolean pickerIngredientMatchesSearch(
+            RecipeTreeViewerBridge.Ingredient ingredient,
+            String normalizedQuery) {
+        if (ingredient == null) return false;
+        if (normalizedQuery == null || normalizedQuery.isEmpty()) return true;
+        return searchMatches(ingredient.getDisplayName(), normalizedQuery)
+                || searchMatches(ingredient.getKey(), normalizedQuery);
+    }
+
+    private static boolean slotsMatchSearch(
+            List<RecipeTreeViewerBridge.Slot> slots,
+            String normalizedQuery) {
+        if (slots == null) return false;
+        for (RecipeTreeViewerBridge.Slot slot : slots) {
+            if (slot == null) continue;
+            for (RecipeTreeViewerBridge.Ingredient alternative : slot.getAlternatives()) {
+                if (pickerIngredientMatchesSearch(alternative, normalizedQuery)) return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean searchMatches(String value, String normalizedQuery) {
+        return value != null && value.toLowerCase(Locale.ROOT).contains(normalizedQuery);
     }
 
     private void drawSemanticRecipeFallback(
@@ -2239,6 +2379,7 @@ public final class RecipeTreeScreen extends GuiScreen {
     }
 
     private final class RecipePickerScreen extends GuiScreen {
+        private static final int PICKER_VIEW_TOP = 62;
         private static final int PICKER_OPEN_JEI = 101;
         private static final int PICKER_ALTERNATIVES = 102;
         private static final int PICKER_NO_RECIPE = 103;
@@ -2258,6 +2399,8 @@ public final class RecipeTreeScreen extends GuiScreen {
                 new ArrayList<PickerCardHitbox>();
         private final List<AspectSourceHitbox> aspectSourceHitboxes =
                 new ArrayList<AspectSourceHitbox>();
+        private GuiTextField searchField;
+        private String searchText = "";
         private int scroll;
         private int contentHeight;
 
@@ -2275,6 +2418,7 @@ public final class RecipeTreeScreen extends GuiScreen {
 
         @Override
         public void initGui() {
+            Keyboard.enableRepeatEvents(true);
             buttonList.clear();
             int right = width - 12;
             int x = right;
@@ -2297,6 +2441,10 @@ public final class RecipeTreeScreen extends GuiScreen {
             buttonList.add(new GuiButton(PICKER_OPEN_JEI, x, 10, 82, 20, "Open in XEI"));
             buttonList.add(new GuiButton(PICKER_DONE, width - 92, height - 30,
                     80, 20, "Done"));
+            int searchWidth = Math.max(90, Math.min(260, width - 180));
+            searchField = new GuiTextField(106, fontRenderer, 58, 34, searchWidth, 20);
+            searchField.setMaxStringLength(120);
+            searchField.setText(searchText);
         }
 
         @Override
@@ -2329,20 +2477,30 @@ public final class RecipeTreeScreen extends GuiScreen {
             String heading = (mode == IFocus.Mode.OUTPUT ? "Input recipe for " : "Output using ")
                     + node.getIngredient().getDisplayName();
             fontRenderer.drawString(heading, 36, 17, 0xFFF3F3F3);
-            String choices = recipeCount(groups) + " choices";
+            String query = normalizedSearch();
+            String choices = filteredChoiceCount(query) + " choices";
             fontRenderer.drawString(choices,
                     width - 14 - fontRenderer.getStringWidth(choices), 40, 0xFFB5C2B3);
+            fontRenderer.drawString("Search", 14, 41, 0xFFB5C2B3);
 
             groupHitboxes.clear();
             machineHitboxes.clear();
             cardHitboxes.clear();
             aspectSourceHitboxes.clear();
-            int viewTop = 58;
+            int viewTop = PICKER_VIEW_TOP;
             int viewBottom = height - 38;
             enableScissor(10, viewTop, width - 10, viewBottom);
             try {
                 int y = viewTop - scroll;
+                int visibleGroups = 0;
                 for (RecipeTreeViewerBridge.RecipeGroup group : groups) {
+                    boolean groupMatches = groupMatchesSearch(group, query);
+                    List<RecipeTreeViewerBridge.Recipe> visibleRecipes =
+                            filteredRecipes(group, query, groupMatches);
+                    int visibleChoices = selectableRecipeCount(
+                            visibleRecipes, query, groupMatches);
+                    if (visibleChoices == 0) continue;
+                    visibleGroups++;
                     int groupY = y;
                     boolean collapsed = progress.isRecipeTypeCollapsed(group.getCategoryUid());
                     if (intersectsViewport(14, groupY, width - 28, 20,
@@ -2364,7 +2522,7 @@ public final class RecipeTreeScreen extends GuiScreen {
                         fontRenderer.drawString(
                                 trim(group.getCategoryTitle(), Math.max(20, width - titleX - 52)),
                                 titleX, groupY + 6, 0xFFE5EDE3);
-                        String total = Integer.toString(selectableRecipeCount(group.getRecipes()));
+                        String total = Integer.toString(visibleChoices);
                         fontRenderer.drawString(total,
                                 width - 22 - fontRenderer.getStringWidth(total), groupY + 6,
                                 0xFFC6D0C3);
@@ -2372,13 +2530,18 @@ public final class RecipeTreeScreen extends GuiScreen {
                     y += 24;
                     if (collapsed) continue;
                     if (isAspectSourceGroup(group)) {
-                        y = drawAspectSourceGrid(group.getRecipes(), y, mouseX, mouseY,
-                                viewTop, viewBottom);
+                        y = drawAspectSourceGrid(visibleRecipes, query, groupMatches,
+                                y, mouseX, mouseY, viewTop, viewBottom);
                     } else {
-                        y = drawPickerCards(group.getRecipes(), y, mouseX, mouseY,
+                        y = drawPickerCards(visibleRecipes, y, mouseX, mouseY,
                                 viewTop, viewBottom);
                     }
                     y += 8;
+                }
+                if (visibleGroups == 0) {
+                    fontRenderer.drawString("No recipes match this search.", 18, y + 8,
+                            0xFFB5C2B3);
+                    y += 28;
                 }
                 contentHeight = Math.max(0, y + scroll - viewTop);
                 scroll = clampScroll(scroll, contentHeight, viewBottom - viewTop);
@@ -2386,7 +2549,9 @@ public final class RecipeTreeScreen extends GuiScreen {
                 GL11.glDisable(GL11.GL_SCISSOR_TEST);
             }
             super.drawScreen(mouseX, mouseY, partialTicks);
+            searchField.drawTextBox();
             PickerMachineHitbox hoveredMachine = pickerMachineAt(mouseX, mouseY);
+            AspectSourceHitbox hoveredAspectSource = aspectSourceAt(mouseX, mouseY);
             String footer = hoveredMachine == null
                     ? "Scroll to browse all recipes"
                     : "Click the machine to view its crafting recipes";
@@ -2398,10 +2563,25 @@ public final class RecipeTreeScreen extends GuiScreen {
                     drawHoveringText(safeTooltip(
                             hoveredMachine.ingredient, "recipe-picker-machine-tooltip"),
                             mouseX, mouseY);
+                } else if (hoveredAspectSource != null) {
+                    if (hoveredAspectSource.containsByproductCorner(mouseX, mouseY)) {
+                        drawAspectSourceByproductTooltip(hoveredAspectSource,
+                                mouseX, mouseY, width, height);
+                    } else {
+                        drawHoveringText(safeTooltip(hoveredAspectSource.ingredient,
+                                "thaumic-aspect-grid-tooltip"), mouseX, mouseY);
+                    }
                 } else {
                     drawNativeIngredientTooltip(mouseX, mouseY);
                 }
             }
+        }
+
+        private AspectSourceHitbox aspectSourceAt(int mouseX, int mouseY) {
+            for (AspectSourceHitbox source : aspectSourceHitboxes) {
+                if (source.contains(mouseX, mouseY)) return source;
+            }
+            return null;
         }
 
         private PickerMachineHitbox pickerMachineAt(int mouseX, int mouseY) {
@@ -2464,6 +2644,8 @@ public final class RecipeTreeScreen extends GuiScreen {
 
         private int drawAspectSourceGrid(
                 List<RecipeTreeViewerBridge.Recipe> pages,
+                String query,
+                boolean groupMatches,
                 int y,
                 int mouseX,
                 int mouseY,
@@ -2475,14 +2657,9 @@ public final class RecipeTreeScreen extends GuiScreen {
             int gridLeft = 18;
             int available = Math.max(cellWidth, width - 36);
             int columns = Math.max(1, (available + gap) / (cellWidth + gap));
-            int choiceCount = selectableRecipeCount(pages);
+            int choiceCount = selectableRecipeCount(pages, query, groupMatches);
             int rows = (choiceCount + columns - 1) / columns;
-            String instruction = "Select one item; the shown amount becomes the recipe input.";
-            if (intersectsViewport(gridLeft, y, available, 12,
-                    10, viewTop, width - 10, viewBottom)) {
-                fontRenderer.drawString(instruction, gridLeft, y, 0xFFBFCABC);
-            }
-            int gridTop = y + 15;
+            int gridTop = y;
             int firstVisibleRow = Math.max(0,
                     Math.floorDiv(viewTop - gridTop - cellHeight, cellHeight + gap));
             int lastVisibleRow = Math.min(rows - 1,
@@ -2493,6 +2670,7 @@ public final class RecipeTreeScreen extends GuiScreen {
             for (RecipeTreeViewerBridge.Recipe page : pages) {
                 for (RecipeTreeViewerBridge.Ingredient source :
                         page.getSelectableAspectSources()) {
+                    if (!groupMatches && !aspectSourceMatches(page, source, query)) continue;
                     if (index >= lastVisibleIndex) {
                         return gridTop + rows * (cellHeight + gap) - gap;
                     }
@@ -2514,8 +2692,14 @@ public final class RecipeTreeScreen extends GuiScreen {
                         fontRenderer.drawString(amount,
                                 left + (cellWidth - fontRenderer.getStringWidth(amount)) / 2,
                                 top + 26, 0xFFE8EEE6);
+                        List<RecipeTreeViewerBridge.Ingredient> byproducts =
+                                page.getAspectSourceByproducts(source);
+                        if (!byproducts.isEmpty()) {
+                            drawAspectSourceCorner(left, top, cellWidth, cellHeight);
+                        }
                         aspectSourceHitboxes.add(new AspectSourceHitbox(
-                                page, source, left, top, cellWidth, cellHeight));
+                                page, source, byproducts,
+                                left, top, cellWidth, cellHeight));
                         liveIngredientRegions.add(new LiveIngredientRegion(source,
                                 left + (cellWidth - 16) / 2, top + 5, 16, 16));
                     }
@@ -2531,19 +2715,93 @@ public final class RecipeTreeScreen extends GuiScreen {
         }
 
         private int selectableRecipeCount(List<RecipeTreeViewerBridge.Recipe> recipes) {
+            return selectableRecipeCount(recipes, "", true);
+        }
+
+        private int selectableRecipeCount(
+                List<RecipeTreeViewerBridge.Recipe> recipes,
+                String query,
+                boolean groupMatches) {
             int count = 0;
             for (RecipeTreeViewerBridge.Recipe recipe : recipes) {
-                count += recipe.isAspectSourcePage()
-                        ? recipe.getSelectableAspectSources().size() : 1;
+                if (!recipe.isAspectSourcePage()) {
+                    count++;
+                    continue;
+                }
+                for (RecipeTreeViewerBridge.Ingredient source :
+                        recipe.getSelectableAspectSources()) {
+                    if (groupMatches || aspectSourceMatches(recipe, source, query)) count++;
+                }
             }
             return count;
         }
 
+        private int filteredChoiceCount(String query) {
+            int count = 0;
+            for (RecipeTreeViewerBridge.RecipeGroup group : groups) {
+                boolean groupMatches = groupMatchesSearch(group, query);
+                List<RecipeTreeViewerBridge.Recipe> visible =
+                        filteredRecipes(group, query, groupMatches);
+                count += selectableRecipeCount(visible, query, groupMatches);
+            }
+            return count;
+        }
+
+        private List<RecipeTreeViewerBridge.Recipe> filteredRecipes(
+                RecipeTreeViewerBridge.RecipeGroup group,
+                String query,
+                boolean groupMatches) {
+            if (query.isEmpty() || groupMatches) return group.getRecipes();
+            List<RecipeTreeViewerBridge.Recipe> result =
+                    new ArrayList<RecipeTreeViewerBridge.Recipe>();
+            for (RecipeTreeViewerBridge.Recipe recipe : group.getRecipes()) {
+                if (recipe.isAspectSourcePage()) {
+                    for (RecipeTreeViewerBridge.Ingredient source :
+                            recipe.getSelectableAspectSources()) {
+                        if (aspectSourceMatches(recipe, source, query)) {
+                            result.add(recipe);
+                            break;
+                        }
+                    }
+                } else if (pickerRecipeMatchesSearch(recipe, query)) {
+                    result.add(recipe);
+                }
+            }
+            return result;
+        }
+
+        private boolean groupMatchesSearch(
+                RecipeTreeViewerBridge.RecipeGroup group,
+                String query) {
+            if (query.isEmpty()) return true;
+            if (searchMatches(group.getCategoryTitle(), query)) return true;
+            RecipeTreeViewerBridge.Ingredient machine = group.getCatalystMachine();
+            return machine != null && pickerIngredientMatchesSearch(machine, query);
+        }
+
+        private boolean aspectSourceMatches(
+                RecipeTreeViewerBridge.Recipe page,
+                RecipeTreeViewerBridge.Ingredient source,
+                String query) {
+            if (query.isEmpty() || pickerIngredientMatchesSearch(source, query)) return true;
+            for (RecipeTreeViewerBridge.Ingredient byproduct :
+                    page.getAspectSourceByproducts(source)) {
+                if (pickerIngredientMatchesSearch(byproduct, query)) return true;
+            }
+            return false;
+        }
+
+        private String normalizedSearch() {
+            searchText = searchField == null ? searchText : searchField.getText();
+            return searchText == null ? "" : searchText.trim().toLowerCase(Locale.ROOT);
+        }
+
         @Override
         protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws IOException {
+            searchField.mouseClicked(mouseX, mouseY, mouseButton);
             super.mouseClicked(mouseX, mouseY, mouseButton);
             if (mc.currentScreen != this) return;
-            int viewTop = 58;
+            int viewTop = PICKER_VIEW_TOP;
             int viewBottom = height - 38;
             if (!pointInsideViewport(mouseX, mouseY, 10, viewTop, width - 10, viewBottom)) {
                 return;
@@ -2616,12 +2874,34 @@ public final class RecipeTreeScreen extends GuiScreen {
 
         @Override
         protected void keyTyped(char typedChar, int keyCode) throws IOException {
+            String previousSearch = searchField.getText();
+            if (searchField.isFocused()
+                    && searchField.textboxKeyTyped(typedChar, keyCode)) {
+                searchText = searchField.getText();
+                if (!previousSearch.equals(searchText)) scroll = 0;
+                return;
+            }
             if (parent.openInventoryIfPressed(keyCode)) return;
+            if (isCtrlKeyDown() && keyCode == Keyboard.KEY_F) {
+                searchField.setFocused(true);
+                return;
+            }
             if (keyCode == Keyboard.KEY_ESCAPE) {
                 mc.displayGuiScreen(parent);
                 return;
             }
             super.keyTyped(typedChar, keyCode);
+        }
+
+        @Override
+        public void updateScreen() {
+            searchField.updateCursorCounter();
+        }
+
+        @Override
+        public void onGuiClosed() {
+            searchText = searchField == null ? searchText : searchField.getText();
+            Keyboard.enableRepeatEvents(false);
         }
 
         @Override
@@ -2744,11 +3024,10 @@ public final class RecipeTreeScreen extends GuiScreen {
         private final RecipeTreeScreen parent;
         private final GuiScreen returnScreen;
         private final RecipeTreeViewerBridge.Ingredient ingredient;
+        private final List<RecipeTreeViewerBridge.RecipeGroup> groups;
         private final List<RecipeTreeViewerBridge.Recipe> recipes;
-        private final List<RecipeTreeViewerBridge.Recipe> normalRecipes =
-                new ArrayList<RecipeTreeViewerBridge.Recipe>();
-        private final List<RecipeTreeViewerBridge.Recipe> aspectSourcePages =
-                new ArrayList<RecipeTreeViewerBridge.Recipe>();
+        private final List<PickerGroupHitbox> groupHitboxes =
+                new ArrayList<PickerGroupHitbox>();
         private final List<PickerCardHitbox> cards = new ArrayList<PickerCardHitbox>();
         private final List<AspectSourceHitbox> aspectSources =
                 new ArrayList<AspectSourceHitbox>();
@@ -2769,26 +3048,35 @@ public final class RecipeTreeScreen extends GuiScreen {
             this.parent = parent;
             this.returnScreen = returnScreen;
             this.ingredient = ingredient;
-            this.recipes = parent.model.flattenedRecipes(ingredient, IFocus.Mode.OUTPUT);
+            this.groups = parent.model.recipesFor(ingredient, IFocus.Mode.OUTPUT);
+            this.recipes = new ArrayList<RecipeTreeViewerBridge.Recipe>();
             String favorite = progress.favoriteRecipe(ingredient.getKey());
-            for (RecipeTreeViewerBridge.Recipe recipe : recipes) {
-                if (recipe.isAspectSourcePage()) {
-                    aspectSourcePages.add(recipe);
-                    if (favorite != null) {
-                        RecipeTreeViewerBridge.Recipe restored =
-                                recipe.resolveAspectSource(favorite);
-                        if (restored != null) selected = restored;
+            for (RecipeTreeViewerBridge.RecipeGroup group : groups) {
+                for (RecipeTreeViewerBridge.Recipe recipe : group.getRecipes()) {
+                    recipes.add(recipe);
+                    if (recipe.isAspectSourcePage()) {
+                        if (favorite != null) {
+                            RecipeTreeViewerBridge.Recipe restored =
+                                    recipe.resolveAspectSource(favorite);
+                            if (restored != null) selected = restored;
+                        }
+                    } else if (favorite != null && favorite.equals(recipe.getKey())) {
+                        selected = recipe;
                     }
-                } else {
-                    normalRecipes.add(recipe);
-                    if (favorite != null && favorite.equals(recipe.getKey())) selected = recipe;
                 }
             }
-            if (selected == null && !normalRecipes.isEmpty()) selected = normalRecipes.get(0);
-            if (selected == null && !aspectSourcePages.isEmpty()
-                    && !aspectSourcePages.get(0).getSelectableAspectSources().isEmpty()) {
-                selected = aspectSourcePages.get(0).selectAspectSource(
-                        aspectSourcePages.get(0).getSelectableAspectSources().get(0));
+            if (selected == null) {
+                for (RecipeTreeViewerBridge.Recipe recipe : recipes) {
+                    if (!recipe.isAspectSourcePage()) {
+                        selected = recipe;
+                        break;
+                    }
+                    if (!recipe.getSelectableAspectSources().isEmpty()) {
+                        selected = recipe.selectAspectSource(
+                                recipe.getSelectableAspectSources().get(0));
+                        break;
+                    }
+                }
             }
         }
 
@@ -2861,63 +3149,55 @@ public final class RecipeTreeScreen extends GuiScreen {
 
             cards.clear();
             aspectSources.clear();
+            groupHitboxes.clear();
             int viewTop = 66;
             int viewBottom = height - 44;
-            int gap = 14;
             int available = right - left - 32;
-            int columns = Math.max(1, Math.min(3, (available + gap) / 190));
-            int cardWidth = (available - gap * (columns - 1)) / columns;
-            List<Integer> rowHeights = recipeRowHeights(normalRecipes, columns, cardWidth);
-            contentHeight = 6;
-            for (int rowHeight : rowHeights) contentHeight += rowHeight + 12;
-            if (!rowHeights.isEmpty()) contentHeight -= 12;
-            int aspectChoiceCount = aspectSourceChoiceCount();
-            int aspectColumns = Math.max(1, (available + 4) / 56);
-            int aspectRows = (aspectChoiceCount + aspectColumns - 1) / aspectColumns;
-            if (aspectChoiceCount > 0) {
-                if (contentHeight > 6) contentHeight += 16;
-                contentHeight += 15 + aspectRows * 46;
-            }
-            scroll = clampScroll(scroll, contentHeight, viewBottom - viewTop);
             int y = 72 - scroll;
             enableScissor(left + 8, viewTop, right - 8, viewBottom);
             try {
-                for (int index = 0; index < normalRecipes.size(); index++) {
-                    RecipeTreeViewerBridge.Recipe recipe = normalRecipes.get(index);
-                    int column = index % columns;
-                    if (column == 0 && index > 0) {
-                        y += rowHeights.get(index / columns - 1) + 12;
+                for (RecipeTreeViewerBridge.RecipeGroup group : groups) {
+                    int groupY = y;
+                    boolean collapsed = progress.isRecipeTypeCollapsed(group.getCategoryUid());
+                    if (intersectsViewport(left + 16, groupY, available, 20,
+                            left + 8, viewTop, right - 8, viewBottom)) {
+                        groupHitboxes.add(new PickerGroupHitbox(
+                                group, left + 16, groupY, available, 20));
+                        Gui.drawRect(left + 16, groupY, right - 16,
+                                groupY + 20, 0xFF293A2F);
+                        String marker = collapsed ? "> " : "v ";
+                        fontRenderer.drawString(marker, left + 22,
+                                groupY + 6, 0xFFE5EDE3);
+                        RecipeTreeViewerBridge.Ingredient machine = group.getCatalystMachine();
+                        int titleX = left + 40;
+                        if (machine != null) {
+                            safeRenderIngredient(machine, left + 40, groupY + 2,
+                                    "open-item-category-machine");
+                            titleX = left + 62;
+                        }
+                        fontRenderer.drawString(
+                                trim(group.getCategoryTitle(),
+                                        Math.max(20, right - titleX - 48)),
+                                titleX, groupY + 6, 0xFFE5EDE3);
+                        String total = Integer.toString(
+                                selectableOpenRecipeCount(group.getRecipes()));
+                        fontRenderer.drawString(total,
+                                right - 24 - fontRenderer.getStringWidth(total),
+                                groupY + 6, 0xFFC6D0C3);
                     }
-                    float scale = Math.min(1F, (cardWidth - 10F) / recipe.getWidth());
-                    RecipeTreeLayout.Size cardSize = pickerRecipeCardSize(
-                            recipe.getWidth(), recipe.getHeight(), scale);
-                    int drawWidth = cardSize.width;
-                    int drawHeight = cardSize.height;
-                    int rowStart = index - column;
-                    int rowItems = Math.min(columns, normalRecipes.size() - rowStart);
-                    int rowLeft = centeredRowLeft(left + 16, available,
-                            cardWidth, gap, rowItems);
-                    int cellLeft = rowLeft + column * (cardWidth + gap);
-                    int drawLeft = cellLeft + (cardWidth - drawWidth) / 2;
-                    if (!intersectsViewport(drawLeft, y, drawWidth, drawHeight,
-                            left + 8, viewTop, right - 8, viewBottom)) continue;
-                    Gui.drawRect(drawLeft - 1, y - 1, drawLeft + drawWidth + 1,
-                            y + drawHeight + 1,
-                            selected != null && selected.getKey().equals(recipe.getKey())
-                                    ? 0xFF66D05B : 0xFF59655C);
-                    drawNativeRecipe(recipe, drawLeft, y, scale,
-                            (int) ((mouseX - drawLeft) / scale),
-                            (int) ((mouseY - y) / scale));
-                    cards.add(new PickerCardHitbox(
-                            recipe, drawLeft, y, drawWidth, drawHeight));
+                    y += 24;
+                    if (collapsed) continue;
+                    if (isOpenAspectSourceGroup(group)) {
+                        y = drawOpenAspectSourceGrid(group.getRecipes(), left + 16, available, y,
+                                mouseX, mouseY, viewTop, viewBottom);
+                    } else {
+                        y = drawOpenRecipeCards(group.getRecipes(), left + 16, available, y,
+                                mouseX, mouseY, viewTop, viewBottom);
+                    }
+                    y += 8;
                 }
-                if (!normalRecipes.isEmpty()) {
-                    y += rowHeights.get(rowHeights.size() - 1) + 16;
-                }
-                if (aspectChoiceCount > 0) {
-                    drawOpenAspectSourceGrid(left + 16, y,
-                            aspectColumns, aspectRows, mouseX, mouseY, viewTop, viewBottom);
-                }
+                contentHeight = Math.max(0, y + scroll - viewTop);
+                scroll = clampScroll(scroll, contentHeight, viewBottom - viewTop);
             } finally {
                 GL11.glDisable(GL11.GL_SCISSOR_TEST);
             }
@@ -2928,23 +3208,104 @@ public final class RecipeTreeScreen extends GuiScreen {
             drawScrollbar(right - 11, viewTop, viewBottom, scroll, contentHeight);
             if (pointInsideViewport(mouseX, mouseY,
                     left + 8, viewTop, right - 8, viewBottom)) {
-                drawNativeIngredientTooltip(mouseX, mouseY);
+                AspectSourceHitbox hoveredSource = null;
+                for (AspectSourceHitbox source : aspectSources) {
+                    if (source.contains(mouseX, mouseY)) {
+                        hoveredSource = source;
+                        break;
+                    }
+                }
+                if (hoveredSource != null) {
+                    if (hoveredSource.containsByproductCorner(mouseX, mouseY)) {
+                        drawAspectSourceByproductTooltip(hoveredSource,
+                                mouseX, mouseY, width, height);
+                    } else {
+                        drawHoveringText(safeTooltip(hoveredSource.ingredient,
+                                "thaumic-aspect-grid-tooltip"), mouseX, mouseY);
+                    }
+                } else {
+                    drawNativeIngredientTooltip(mouseX, mouseY);
+                }
             }
         }
 
-        private int aspectSourceChoiceCount() {
+        private int drawOpenRecipeCards(
+                List<RecipeTreeViewerBridge.Recipe> values,
+                int regionLeft,
+                int available,
+                int y,
+                int mouseX,
+                int mouseY,
+                int viewTop,
+                int viewBottom) {
+            int gap = 14;
+            int columns = Math.max(1, Math.min(3, (available + gap) / 190));
+            int cardWidth = (available - gap * (columns - 1)) / columns;
+            List<Integer> rowHeights = recipeRowHeights(values, columns, cardWidth);
+            int rowY = y;
+            for (int index = 0; index < values.size(); index++) {
+                RecipeTreeViewerBridge.Recipe recipe = values.get(index);
+                int column = index % columns;
+                if (column == 0 && index > 0) {
+                    rowY += rowHeights.get(index / columns - 1) + 12;
+                }
+                float scale = Math.min(1F, (cardWidth - 10F) / recipe.getWidth());
+                RecipeTreeLayout.Size cardSize = pickerRecipeCardSize(
+                        recipe.getWidth(), recipe.getHeight(), scale);
+                int drawWidth = cardSize.width;
+                int drawHeight = cardSize.height;
+                int rowStart = index - column;
+                int rowItems = Math.min(columns, values.size() - rowStart);
+                int rowLeft = centeredRowLeft(regionLeft, available,
+                        cardWidth, gap, rowItems);
+                int cellLeft = rowLeft + column * (cardWidth + gap);
+                int drawLeft = cellLeft + (cardWidth - drawWidth) / 2;
+                if (!intersectsViewport(drawLeft, rowY, drawWidth, drawHeight,
+                        regionLeft - 8, viewTop, regionLeft + available + 8, viewBottom)) {
+                    continue;
+                }
+                boolean active = selected != null
+                        && selected.getKey().equals(recipe.getKey());
+                boolean hovered = contains(
+                        drawLeft, rowY, drawWidth, drawHeight, mouseX, mouseY);
+                Gui.drawRect(drawLeft - 1, rowY - 1,
+                        drawLeft + drawWidth + 1, rowY + drawHeight + 1,
+                        active ? 0xFF66D05B : hovered ? 0xFF92B989 : 0xFF59655C);
+                drawNativeRecipe(recipe, drawLeft, rowY, scale,
+                        (int) ((mouseX - drawLeft) / scale),
+                        (int) ((mouseY - rowY) / scale));
+                if (active) {
+                    Gui.drawRect(drawLeft, rowY, drawLeft + drawWidth, rowY + drawHeight,
+                            selectedRecipeTintColor(0xFF55B947));
+                }
+                cards.add(new PickerCardHitbox(
+                        recipe, drawLeft, rowY, drawWidth, drawHeight));
+            }
+            return rowHeights.isEmpty()
+                    ? rowY : rowY + rowHeights.get(rowHeights.size() - 1);
+        }
+
+        private int selectableOpenRecipeCount(
+                List<RecipeTreeViewerBridge.Recipe> values) {
             int count = 0;
-            for (RecipeTreeViewerBridge.Recipe page : aspectSourcePages) {
-                count += page.getSelectableAspectSources().size();
+            for (RecipeTreeViewerBridge.Recipe recipe : values) {
+                count += recipe.isAspectSourcePage()
+                        ? recipe.getSelectableAspectSources().size() : 1;
             }
             return count;
         }
 
-        private void drawOpenAspectSourceGrid(
+        private boolean isOpenAspectSourceGroup(
+                RecipeTreeViewerBridge.RecipeGroup group) {
+            return RecipeTreeViewerBridge.THAUMIC_ASPECT_SOURCE_CATEGORY_UID.equals(
+                    group.getCategoryUid());
+        }
+
+        private int drawOpenAspectSourceGrid(
+                List<RecipeTreeViewerBridge.Recipe> pages,
                 int gridLeft,
+                int available,
                 int y,
-                int columns,
-                int rows,
                 int mouseX,
                 int mouseY,
                 int viewTop,
@@ -2952,21 +3313,25 @@ public final class RecipeTreeScreen extends GuiScreen {
             final int cellWidth = 52;
             final int cellHeight = 42;
             final int gap = 4;
-            fontRenderer.drawString("Select one item; amount shown is the recipe input.",
-                    gridLeft, y, 0xFFBFCABC);
-            int gridTop = y + 15;
+            int choiceCount = selectableOpenRecipeCount(pages);
+            if (choiceCount <= 0) return y;
+            int columns = Math.max(1, (available + gap) / (cellWidth + gap));
+            int rows = (choiceCount + columns - 1) / columns;
+            int gridTop = y;
             int firstVisibleRow = Math.max(0,
                     Math.floorDiv(viewTop - gridTop - cellHeight, cellHeight + gap));
             int lastVisibleRow = Math.min(rows - 1,
                     Math.floorDiv(viewBottom - gridTop, cellHeight + gap) + 1);
             int firstVisibleIndex = firstVisibleRow * columns;
-            int lastVisibleIndex = Math.min(aspectSourceChoiceCount(),
+            int lastVisibleIndex = Math.min(choiceCount,
                     (lastVisibleRow + 1) * columns);
             int index = 0;
-            for (RecipeTreeViewerBridge.Recipe page : aspectSourcePages) {
+            for (RecipeTreeViewerBridge.Recipe page : pages) {
                 for (RecipeTreeViewerBridge.Ingredient source :
                         page.getSelectableAspectSources()) {
-                    if (index >= lastVisibleIndex) return;
+                    if (index >= lastVisibleIndex) {
+                        return gridTop + rows * (cellHeight + gap) - gap;
+                    }
                     if (index >= firstVisibleIndex) {
                         int column = index % columns;
                         int row = index / columns;
@@ -2984,14 +3349,21 @@ public final class RecipeTreeScreen extends GuiScreen {
                         fontRenderer.drawString(amount,
                                 left + (cellWidth - fontRenderer.getStringWidth(amount)) / 2,
                                 top + 26, 0xFFE8EEE6);
+                        List<RecipeTreeViewerBridge.Ingredient> byproducts =
+                                page.getAspectSourceByproducts(source);
+                        if (!byproducts.isEmpty()) {
+                            drawAspectSourceCorner(left, top, cellWidth, cellHeight);
+                        }
                         aspectSources.add(new AspectSourceHitbox(
-                                page, source, left, top, cellWidth, cellHeight));
+                                page, source, byproducts,
+                                left, top, cellWidth, cellHeight));
                         liveIngredientRegions.add(new LiveIngredientRegion(
                                 source, left + 18, top + 5, 16, 16));
                     }
                     index++;
                 }
             }
+            return gridTop + rows * (cellHeight + gap) - gap;
         }
 
         private List<Integer> recipeRowHeights(
@@ -3022,6 +3394,13 @@ public final class RecipeTreeScreen extends GuiScreen {
                     left + 8, 66, right - 8, viewBottom)) return;
             if (mouseButton == 1 && openNativeIngredientAt(mouseX, mouseY)) return;
             if (mouseButton != 0) return;
+            for (PickerGroupHitbox header : groupHitboxes) {
+                if (!header.contains(mouseX, mouseY)) continue;
+                boolean collapsed = progress.isRecipeTypeCollapsed(
+                        header.group.getCategoryUid());
+                progress.setRecipeTypeCollapsed(header.group.getCategoryUid(), !collapsed);
+                return;
+            }
             for (PickerCardHitbox card : cards) {
                 if (card.contains(mouseX, mouseY)) {
                     selected = card.recipe;
@@ -3485,6 +3864,7 @@ public final class RecipeTreeScreen extends GuiScreen {
         private final RecipeTreeScreen parent;
         private final GuiScreen returnScreen;
         private final List<HistoryHitbox> cards = new ArrayList<HistoryHitbox>();
+        private final List<HistoryHitbox> deleteButtons = new ArrayList<HistoryHitbox>();
         private Integer comparisonIndex;
         private int scroll;
         private int contentHeight;
@@ -3512,6 +3892,7 @@ public final class RecipeTreeScreen extends GuiScreen {
             Gui.drawRect(6, 6, width - 6, 8, 0xFF55B947);
             fontRenderer.drawString("(L)  Recipe tree history", 18, 20, 0xFFF1F1F1);
             cards.clear();
+            deleteButtons.clear();
             int gap = 8;
             int cardWidth = Math.max(140, Math.min(260, (width - 42) / 3));
             int columns = Math.max(1, (width - 28 + gap) / (cardWidth + gap));
@@ -3540,19 +3921,27 @@ public final class RecipeTreeScreen extends GuiScreen {
                         safeRenderIngredient(ingredient, left + 9, top + 14, "history-card");
                     }
                     String name = historyName(entry);
-                    fontRenderer.drawString(trim(name, cardWidth - 48), left + 34, top + 10,
+                    fontRenderer.drawString(trim(name, cardWidth - 64), left + 34, top + 10,
                             0xFFF0F2EE);
                     String depth = "Tree depth " + entry.getTreeDepth();
                     fontRenderer.drawString(depth, left + 34, top + 27, 0xFFB9C5B7);
                     cards.add(new HistoryHitbox(index, left, top, cardWidth, 46));
+                    int deleteLeft = left + cardWidth - 15;
+                    int deleteTop = top + 4;
+                    HistoryHitbox delete = new HistoryHitbox(
+                            index, deleteLeft, deleteTop, 11, 11);
+                    deleteButtons.add(delete);
+                    Gui.drawRect(deleteLeft, deleteTop, deleteLeft + 11, deleteTop + 11,
+                            delete.contains(mouseX, mouseY) ? 0xFFC85353 : 0xFF793939);
+                    fontRenderer.drawString("x", deleteLeft + 3, deleteTop + 1, 0xFFFFFFFF);
                 }
             } finally {
                 GL11.glDisable(GL11.GL_SCISSOR_TEST);
             }
             fontRenderer.drawString(
                     comparisonIndex == null
-                            ? "Newest first - left click to open; right click to choose a comparison"
-                            : "Right click another tree to compare recipe choices",
+                            ? "Newest first - left click to open; right click to compare; x deletes"
+                            : "Right click another tree to compare Types, Materials, and Byproducts",
                     16, height - 24, 0xFFBFC8BD);
             super.drawScreen(mouseX, mouseY, partialTicks);
             drawScrollbar(width - 11, viewTop, viewBottom, scroll, contentHeight);
@@ -3564,6 +3953,16 @@ public final class RecipeTreeScreen extends GuiScreen {
             if (mc.currentScreen != this) return;
             if (!pointInsideViewport(mouseX, mouseY,
                     10, 42, width - 10, height - 38)) return;
+            for (HistoryHitbox delete : deleteButtons) {
+                if (mouseButton != 0 || !delete.contains(mouseX, mouseY)) continue;
+                int deletedIndex = delete.index;
+                parent.deleteHistoryEntry(deletedIndex);
+                if (comparisonIndex != null) {
+                    if (comparisonIndex == deletedIndex) comparisonIndex = null;
+                    else if (comparisonIndex > deletedIndex) comparisonIndex--;
+                }
+                return;
+            }
             for (HistoryHitbox card : cards) {
                 if (!card.contains(mouseX, mouseY)) continue;
                 if (mouseButton == 0) {
@@ -3600,6 +3999,12 @@ public final class RecipeTreeScreen extends GuiScreen {
         private final GuiScreen parent;
         private final RecipeTreeProgress.RecipeHistoryEntry leftEntry;
         private final RecipeTreeProgress.RecipeHistoryEntry rightEntry;
+        private final List<List<RecipeTreeComparison.Difference>> lists =
+                new ArrayList<List<RecipeTreeComparison.Difference>>();
+        private final int[] scrollRows = new int[3];
+        private final boolean compareUsingByproducts = useByproducts;
+        private int selectedTab;
+        private String failure;
 
         private TreeComparisonScreen(
                 GuiScreen parent,
@@ -3608,17 +4013,44 @@ public final class RecipeTreeScreen extends GuiScreen {
             this.parent = parent;
             this.leftEntry = leftEntry;
             this.rightEntry = rightEntry;
+            try {
+                RecipeTreeModel a = RecipeTreeModel.restoreForComparison(bridge, leftEntry);
+                RecipeTreeModel b = RecipeTreeModel.restoreForComparison(bridge, rightEntry);
+                if (a == null || b == null) throw new IllegalStateException("A saved tree is unavailable in this pack");
+                RecipeTreeModel.Summary left = a.summarize(compareUsingByproducts);
+                RecipeTreeModel.Summary right = b.summarize(compareUsingByproducts);
+                lists.add(RecipeTreeComparison.differences(RecipeTreeComparison.types(left), RecipeTreeComparison.types(right)));
+                lists.add(RecipeTreeComparison.differences(RecipeTreeComparison.items(left.materials), RecipeTreeComparison.items(right.materials)));
+                lists.add(RecipeTreeComparison.differences(RecipeTreeComparison.items(left.byproducts), RecipeTreeComparison.items(right.byproducts)));
+            } catch (RuntimeException error) {
+                failure = "Cannot compare complete trees: " + error.getMessage();
+                JeiExportMod.LOGGER.error("[jeiexport] Could not compare saved trees {} and {}",
+                        historyName(leftEntry), historyName(rightEntry), error);
+            }
         }
 
         @Override
         public void initGui() {
             buttonList.clear();
             buttonList.add(new GuiButton(501, width - 92, height - 30, 80, 20, "Back"));
+            int tabWidth = Math.min(102, (width - 36) / 3);
+            for (int index = 0; index < 3; index++) {
+                String label = SummaryTab.values()[index].label;
+                String counted = label + (failure == null ? " (" + lists.get(index).size() + ")" : "");
+                GuiButton tab = new GuiButton(502 + index, 18 + index * tabWidth, 70, tabWidth - 4, 20,
+                        fontRenderer.getStringWidth(counted) <= tabWidth - 12 ? counted : label);
+                tab.enabled = failure == null && index != selectedTab;
+                buttonList.add(tab);
+            }
         }
 
         @Override
         protected void actionPerformed(GuiButton button) throws IOException {
             if (button.id == 501) mc.displayGuiScreen(parent);
+            else if (button.id >= 502 && button.id <= 504) {
+                selectedTab = button.id - 502;
+                initGui();
+            }
         }
 
         @Override
@@ -3629,21 +4061,68 @@ public final class RecipeTreeScreen extends GuiScreen {
             fontRenderer.drawString("Compare recipe trees", 18, 20, 0xFFF0F0F0);
             String leftName = historyName(leftEntry);
             String rightName = historyName(rightEntry);
-            fontRenderer.drawString(leftName, 20, 48, 0xFFB9D8B3);
-            fontRenderer.drawString(rightName, width / 2 + 10, 48, 0xFFB9D8B3);
-            List<String> differences = comparisonDifferences(leftEntry, rightEntry);
-            int y = 76;
-            if (differences.isEmpty()) {
-                fontRenderer.drawString("No recipe selections changed", 20, y, 0xFFC4CDC1);
+            fontRenderer.drawString(trim("A: " + leftName + " x" + leftEntry.getAmount(), width / 2 - 30), 20, 40, 0xFFB9D8B3);
+            fontRenderer.drawString(trim("B: " + rightName + " x" + rightEntry.getAmount(), width / 2 - 30), width / 2 + 10, 40, 0xFFB9D8B3);
+            fontRenderer.drawString(trim("Byproduct usage: " + (compareUsingByproducts ? "ON" : "OFF")
+                    + " - comparing saved amounts", width - 40), 20, 55, 0xFFADB9AA);
+            if (failure != null) {
+                fontRenderer.drawSplitString(failure, 20, 108, width - 40, 0xFFFFAAAA);
             } else {
-                for (String difference : differences) {
-                    if (y + 12 > height - 38) break;
-                    fontRenderer.drawString(trim(difference, width - 40), 20, y,
-                            0xFFE4E7E2);
-                    y += 13;
+                List<RecipeTreeComparison.Difference> differences = lists.get(selectedTab);
+                int aRight = width * 60 / 100;
+                int bRight = width * 77 / 100;
+                int deltaRight = width - 24;
+                fontRenderer.drawString(selectedTab == 0 ? "Recipe type" : "Item / resource", 20, 100, 0xFFE4E7E2);
+                comparisonNumber("A", aRight, 100, 0xFFE4E7E2);
+                comparisonNumber("B", bRight, 100, 0xFFE4E7E2);
+                comparisonNumber("B - A", deltaRight, 100, 0xFFE4E7E2);
+                int visible = Math.max(0, (height - 42 - 116) / 24);
+                int maximum = summaryMaximumScroll(differences.size(), visible);
+                scrollRows[selectedTab] = clamp(scrollRows[selectedTab], 0, maximum);
+                RecipeTreeComparison.Difference hovered = null;
+                if (differences.isEmpty()) fontRenderer.drawString("No differences in this list", 20, 122, 0xFFB9D8B3);
+                for (int index = scrollRows[selectedTab]; index < differences.size()
+                        && index < scrollRows[selectedTab] + visible; index++) {
+                    RecipeTreeComparison.Difference row = differences.get(index);
+                    int y = 116 + (index - scrollRows[selectedTab]) * 24;
+                    boolean over = contains(18, y, width - 38, 22, mouseX, mouseY);
+                    Gui.drawRect(18, y, width - 20, y + 22, over ? 0xFF35473B : 0x552B382F);
+                    if (row.entry.icon != null) safeRenderIngredient(row.entry.icon, 22, y + 3, "comparison");
+                    fontRenderer.drawString(trim(row.entry.name, width * 40 / 100 - 44), 44, y + 7, 0xFFE4E7E2);
+                    comparisonNumber(trim(RecipeTreeModel.formatAmount(row.left), width * 16 / 100), aRight, y + 7, 0xFFE4E7E2);
+                    comparisonNumber(trim(RecipeTreeModel.formatAmount(row.right), width * 16 / 100), bRight, y + 7, 0xFFE4E7E2);
+                    String change = (row.change.signum() > 0 ? "+" : "") + RecipeTreeModel.formatAmount(row.change);
+                    comparisonNumber(trim(change, width * 16 / 100), deltaRight, y + 7,
+                            row.change.signum() > 0 ? 0xFFF0C879 : 0xFF8BCBE8);
+                    if (over) hovered = row;
+                }
+                if (visible > 0) drawScrollbar(width - 16, 116, 116 + visible * 24,
+                        scrollRows[selectedTab] * 24, differences.size() * 24);
+                if (hovered != null) {
+                    List<String> tooltip = new ArrayList<String>();
+                    if (hovered.entry.icon != null) tooltip.addAll(safeTooltip(hovered.entry.icon, "comparison-tooltip"));
+                    else tooltip.add(hovered.entry.name);
+                    tooltip.add("A: " + RecipeTreeModel.formatAmount(hovered.left));
+                    tooltip.add("B: " + RecipeTreeModel.formatAmount(hovered.right));
+                    tooltip.add("Change (B - A): " + (hovered.change.signum() > 0 ? "+" : "")
+                            + RecipeTreeModel.formatAmount(hovered.change));
+                    drawHoveringText(tooltip, mouseX, mouseY);
                 }
             }
             super.drawScreen(mouseX, mouseY, partialTicks);
+        }
+
+        private void comparisonNumber(String text, int right, int y, int color) {
+            fontRenderer.drawString(text, right - fontRenderer.getStringWidth(text), y, color);
+        }
+
+        @Override
+        public void handleMouseInput() throws IOException {
+            super.handleMouseInput();
+            if (failure != null) return;
+            int visible = Math.max(0, (height - 42 - 116) / 24);
+            scrollRows[selectedTab] = scrollSummaryRows(scrollRows[selectedTab], Mouse.getEventDWheel(),
+                    summaryMaximumScroll(lists.get(selectedTab).size(), visible));
         }
 
         @Override
@@ -3759,37 +4238,6 @@ public final class RecipeTreeScreen extends GuiScreen {
             if (name != null && !name.isEmpty()) return name;
         }
         return entry == null ? "Unavailable tree" : entry.getItemIdentity();
-    }
-
-    private List<String> comparisonDifferences(
-            RecipeTreeProgress.RecipeHistoryEntry left,
-            RecipeTreeProgress.RecipeHistoryEntry right) {
-        Map<String, String> leftRecipes = selectionMap(left);
-        Map<String, String> rightRecipes = selectionMap(right);
-        Set<String> paths = new HashSet<String>();
-        paths.addAll(leftRecipes.keySet());
-        paths.addAll(rightRecipes.keySet());
-        List<String> differences = new ArrayList<String>();
-        for (String path : paths) {
-            String leftRecipe = leftRecipes.get(path);
-            String rightRecipe = rightRecipes.get(path);
-            if (leftRecipe == null ? rightRecipe == null : leftRecipe.equals(rightRecipe)) continue;
-            differences.add(path + ": " + String.valueOf(leftRecipe) + " -> "
-                    + String.valueOf(rightRecipe));
-        }
-        Collections.sort(differences);
-        return differences;
-    }
-
-    private static Map<String, String> selectionMap(
-            RecipeTreeProgress.RecipeHistoryEntry entry) {
-        Map<String, String> values = new HashMap<String, String>();
-        if (entry == null) return values;
-        for (RecipeTreeProgress.RecipeHistorySelection selection : entry.getSelections()) {
-            values.put(selection.getRootIndex() + ":" + selection.getPath() + ":"
-                    + selection.getIngredientName(), selection.getRecipeIdentity());
-        }
-        return values;
     }
 
     private static final class ScreenRect {
@@ -4055,10 +4503,18 @@ public final class RecipeTreeScreen extends GuiScreen {
     private static final class AspectSourceHitbox extends Hitbox {
         private final RecipeTreeViewerBridge.Recipe page;
         private final RecipeTreeViewerBridge.Ingredient ingredient;
+        private final List<RecipeTreeViewerBridge.Ingredient> byproducts;
+
+        private boolean containsByproductCorner(int mouseX, int mouseY) {
+            return !byproducts.isEmpty() && contains(mouseX, mouseY)
+                    && (left + width - 1 - mouseX) + (top + height - 1 - mouseY)
+                    < ASPECT_CORNER_SIZE;
+        }
 
         private AspectSourceHitbox(
                 RecipeTreeViewerBridge.Recipe page,
                 RecipeTreeViewerBridge.Ingredient ingredient,
+                List<RecipeTreeViewerBridge.Ingredient> byproducts,
                 int left,
                 int top,
                 int width,
@@ -4066,6 +4522,9 @@ public final class RecipeTreeScreen extends GuiScreen {
             super(left, top, width, height);
             this.page = page;
             this.ingredient = ingredient;
+            this.byproducts = byproducts == null
+                    ? Collections.<RecipeTreeViewerBridge.Ingredient>emptyList()
+                    : byproducts;
         }
     }
 

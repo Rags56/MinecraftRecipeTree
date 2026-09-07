@@ -3,6 +3,63 @@
 This file contains release-ready notes for the Minecraft exporter builds. The generated exporter
 manifest remains the source of truth for downloadable filenames, checksums, and compatibility.
 
+## 2026-09-06
+
+### Compare tree summary lists
+
+- Forge HEI/JEI 1.12.2 beta: **1.2.0-beta.128**
+- Replace raw recipe-identity differences with Types, Materials, and Byproducts tabs.
+- Show changed entries with icons, both saved trees' quantities, and signed B minus A differences.
+- Use the same totals and byproduct-usage setting as the sidebar, with independent tab scrolling.
+- Restore saved choices without changing favorites or reusable preferences; report incomplete
+  restoration instead of presenting partial totals as a complete comparison.
+
+## 2026-09-05
+
+### Scrollable tree sidebar tabs
+
+- Forge HEI/JEI 1.12.2 beta: **1.2.0-beta.127**
+- Scroll Types, Materials, and Byproducts with the mouse wheel over the sidebar.
+- Remember each tab's position, show overflow scrollbars, and keep tab headers and controls fixed.
+- Render only visible rows and clamp scrolling when the tree or available panel height changes.
+- Consume sidebar wheel input before tree zoom or ingredient-alternative cycling.
+
+## 2026-09-05
+
+### Multiblock preview depth correction
+
+- Forge HEI/JEI 1.12.2 beta: **1.2.0-beta.126**
+- Clear depth inside the relocated, clipped MMCE structure viewport before rendering the scene,
+  so stale recipe-panel depth cannot hide it. Preserve the surrounding UI and panel colors.
+
+## 2026-09-05
+
+### Compact, complete aspect tooltips
+
+- Forge HEI/JEI 1.12.2 beta: **1.2.0-beta.125**
+- Include the selected aspect first in the corner tooltip, followed by its additional aspects.
+- Use the native quantities on the icons without a duplicate amount row underneath.
+- Move the `+` slightly right and down within its shaded corner.
+- Keep the selected aspect as the primary output, not a byproduct.
+
+## 2026-09-05
+
+### Aligned multiblock structure previews
+
+- Forge HEI/JEI 1.12.2 beta: **1.2.0-beta.124**
+- Align Modular Machinery CE's live 3D structure with its recipe panel at every zoom and GUI scale.
+- Clip the structure to its panel and the recipe list viewport while scrolling, and restore
+  native renderer callbacks and graphics state after drawing.
+
+## 2026-09-05
+
+### Aspect-grid corner tooltips
+
+- Forge HEI/JEI 1.12.2 beta: **1.2.0-beta.123**
+- Shade the triangular `+` corner on aspect-source cards with additional aspects.
+- Show extra aspects as a single row of icons and amounts only while hovering that corner,
+  without names or a heading. Keep the normal item tooltip elsewhere on the card.
+
 ## 2026-09-05
 
 ### Modern planner feature parity
@@ -39,6 +96,80 @@ manifest remains the source of truth for downloadable filenames, checksums, and 
   Minecraft 1.21.1. Unwrap JEI recipe holders when extracting cooking durations.
 - Include Minecraft version and loader in the build filename to distinguish it from older ports.
 - This port requires JEI; the Forge 1.20.1 REI adapter is not included.
+
+## 2026-09-04
+
+### Searchable recipe picker and aspect byproducts
+
+- Forge HEI/JEI 1.12.2 beta: **1.2.0-beta.122**
+
+#### Added
+
+- Add a live search field to the in-game input-recipe picker that filters recipe categories,
+  machines, ingredients, outputs, and aspect-source items.
+- Mark aspect-source items that contain additional aspects with a corner `+` and list those
+  aspects and amounts on hover.
+
+#### Changed
+
+- Treat every non-selected aspect on a chosen aspect-source item as a recipe byproduct so it is
+  included in the tree's existing byproduct totals and reuse calculations.
+
+## 2026-09-03
+
+### Grouped Crucible catalyst alternatives
+
+- Forge HEI/JEI 1.12.2 beta: **1.2.0-beta.121**
+
+#### Fixed
+
+- Show Ore Dictionary variants accepted by one ThaumicJEI Crucible catalyst slot as switchable
+  alternatives in one input node instead of treating every variant as a separately required item.
+
+## 2026-09-03
+
+### Deletable recipe-tree history
+
+- Forge HEI/JEI 1.12.2 beta: **1.2.0-beta.120**
+
+#### Added
+
+- Add an `x` control to every in-game recipe-tree history card for deleting that saved tree without
+  affecting neighboring history entries.
+
+## 2026-09-03
+
+### Correct aspect-source scaling
+
+- Forge HEI/JEI 1.12.2 beta: **1.2.0-beta.119**
+
+#### Fixed
+
+- Treat an item's displayed aspect amount as the aspects produced by one item, so aspect demand is
+  divided by that yield and rounded up instead of multiplying the required item count by it.
+
+## 2026-09-03
+
+### Cleaner aspect-source grids
+
+- Forge HEI/JEI 1.12.2 beta: **1.2.0-beta.118**
+
+#### Improved
+
+- Remove the redundant aspect-source selection reminder from recipe choosers and move the item
+  grid up into the reclaimed space.
+
+## 2026-09-03
+
+### Grouped starter-recipe selection
+
+- Forge HEI/JEI 1.12.2 beta: **1.2.0-beta.117**
+
+#### Improved
+
+- Group recipes by their HEI/JEI category on the add/start-tree chooser, with collapsible headers,
+  category machines, and per-category recipe counts matching the input-recipe picker.
+- Tint the selected recipe across its exact native render bounds so the pending choice is clear.
 
 ## 2026-09-02
 
