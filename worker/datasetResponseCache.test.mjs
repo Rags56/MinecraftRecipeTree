@@ -43,3 +43,17 @@ test('a mismatched dataset query cannot hit a validated cache entry', async () =
   const invalid = await cachedDatasetResponse(new Request(url + '&noise=1'), async () => new Response('Exact query required', {status: 400}), f.ctx, f.cache);
   assert.equal(invalid.status, 400);
 });
+
+test('missing execution context logs and serves validated storage without starting cache work', async t => {
+  const warning = t.mock.method(console, 'warn', () => {});
+  const cache = {
+    async match() { assert.fail('Cache reads require the execution context.'); },
+    async put() { assert.fail('Cache writes require the execution context.'); },
+  };
+  const loaded = new Response('validated', {headers: {'Cache-Control': 'public, immutable'}});
+  const response = await cachedDatasetResponse(new Request(url), async () => loaded, undefined, cache);
+  assert.equal(response, loaded);
+  assert.equal(await response.text(), 'validated');
+  assert.equal(warning.mock.callCount(), 1);
+  assert.match(warning.mock.calls[0].arguments[0], /execution context/);
+});

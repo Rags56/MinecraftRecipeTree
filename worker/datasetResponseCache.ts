@@ -5,12 +5,16 @@
 export async function cachedDatasetResponse(
   request: Request,
   load: () => Promise<Response>,
-  ctx: {waitUntil(promise: Promise<unknown>): void},
+  ctx: {waitUntil(promise: Promise<unknown>): void} | undefined,
   cache?: Cache,
 ): Promise<Response> {
   const url = new URL(request.url);
   if (!/^\/dataset\/(publications|preview-sets)\/[a-f0-9]{64}\//.test(url.pathname)
     || !['GET', 'HEAD'].includes(request.method)) return load();
+  if (!ctx) {
+    console.warn('Dataset response cache requires an execution context; serving validated storage directly.');
+    return load();
+  }
   if (!cache) {
     try { cache = globalThis.caches?.default; }
     catch (error) { console.error('Dataset response cache access failed.', error); }
