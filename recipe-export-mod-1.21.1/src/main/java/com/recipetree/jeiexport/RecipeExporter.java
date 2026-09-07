@@ -65,13 +65,32 @@ final class RecipeExporter implements ExportJob.PhaseRunner {
     private JsonArray recipesJson;
     @Nullable
     private JsonObject categoryJson;
+    @Nullable
+    private IncrementalExportCache.RecipeCategoryCache previousRecipes;
     private int exportedTotal;
+    private final Map<LayoutKey, BaseLayer> baseLayers = new HashMap<>();
+    private final Set<String> reservedBaseNames = new LinkedHashSet<>();
+    private final Set<String> copiedBaseNames = new LinkedHashSet<>();
+    private final Set<String> reservedRecipeImageNames = new LinkedHashSet<>();
+    private final Set<String> copiedRecipeImageNames = new LinkedHashSet<>();
+    private final Map<OverlayKey, String> identicalRecipeOverlays = new HashMap<>();
+    private int nextBaseIndex;
+    private int nextRecipeImageIndex;
+    private long layeredRecipePixels;
+    private long sharedRecipePixels;
+    private int deduplicatedRecipeImages;
     private final Set<Class<?>> warnedHelperAmountTypes = new LinkedHashSet<>();
     private final Set<Class<?>> warnedUnknownAmountTypes = new LinkedHashSet<>();
     private final Set<Class<?>> warnedCategoricalAmountTypes = new LinkedHashSet<>();
     private final Set<ResourceLocation> warnedLargeVariantCategories = new LinkedHashSet<>();
     private final Set<ResourceLocation> warnedRegistryNameCategories = new LinkedHashSet<>();
     private final Map<Class<?>, Optional<Method>> helperAmountMethods = new HashMap<>();
+
+    private record LayoutKey(int width, int height, int scale) {
+    }
+
+    private record OverlayKey(LayoutKey layout, String contentFingerprint) {
+    }
 
     private record RetentionData(String mode, Integer uses) {
         private static RetentionData reusable() {
@@ -80,6 +99,21 @@ final class RecipeExporter implements ExportJob.PhaseRunner {
 
         private static RetentionData durability(int uses) {
             return new RetentionData("durability", Math.max(1, uses));
+        }
+    }
+
+    private static final class BaseLayer implements AutoCloseable {
+        private final NativeImage image;
+        private final String name;
+
+        private BaseLayer(NativeImage image, String name) {
+            this.image = image;
+            this.name = name;
+        }
+
+        @Override
+        public void close() {
+            image.close();
         }
     }
 
@@ -99,11 +133,9 @@ final class RecipeExporter implements ExportJob.PhaseRunner {
      * ("Item Tags", "Block Tags", ...). Skipped by default; re-enable with
      * -Djeiexport.includeMetaCategories=true.
      */
-    private static boolean isMetaCategory(ResourceLocation uid) {
-        if (!"jei".equals(uid.getNamespace())) {
-            return false;
-        }
-        return uid.getPath().startsWith("tag_recipes") || "information".equals(uid.getPath());
+    static boolean isMetaCategory(ResourceLocation uid) {
+        return uid.getPath().startsWith("tag_recipes")
+                || ("jei".equals(uid.getNamespace()) && "information".equals(uid.getPath()));
     }
 
     @Override
@@ -130,17 +162,45 @@ final class RecipeExporter implements ExportJob.PhaseRunner {
         try {
             catTitle = category.getTitle().getString();
         } catch (Throwable t) {
-            ctx.failure("category title " + uid + ": " + t + "; using category id");
+            ctx.failure("category title " + uid + " failed; using category id", t);
             catTitle = uid.toString();
         }
         try {
             this.recipes = recipeManager.createRecipeLookup(category.getRecipeType()).get().toList();
         } catch (Throwable t) {
-            ctx.failure("category recipes " + uid + ": " + t);
+            ctx.failure("category recipes " + uid, t);
             this.recipes = List.of();
         }
         this.recipeIndex = 0;
         this.recipesJson = new JsonArray();
+        closeBaseLayers();
+        this.reservedBaseNames.clear();
+        this.copiedBaseNames.clear();
+        this.reservedRecipeImageNames.clear();
+        this.copiedRecipeImageNames.clear();
+        this.identicalRecipeOverlays.clear();
+        this.nextBaseIndex = 0;
+        this.nextRecipeImageIndex = 0;
+        this.layeredRecipePixels = 0;
+        this.sharedRecipePixels = 0;
+        this.deduplicatedRecipeImages = 0;
+        this.previousRecipes = null;
+        if (ctx.previous != null) {
+            try {
+                this.previousRecipes = ctx.previous.recipeCategory(uid);
+                for (IncrementalExportCache.CachedRecipe cached : this.previousRecipes.allRecipes()) {
+                    if (cached.baseImageName() != null) {
+                        this.reservedBaseNames.add(cached.baseImageName());
+                    }
+                    this.reservedRecipeImageNames.add(fileName(cached.imagePath()));
+                }
+            } catch (IOException cacheFailure) {
+                JeiExportMod.LOGGER.warn(
+                        "[jeiexport] Recipe cache lookup failed for category {}; rendering the category again",
+                        uid,
+                        cacheFailure);
+            }
+        }
 
         JsonObject cj = new JsonObject();
         cj.addProperty("id", uid.toString());
@@ -153,7 +213,7 @@ final class RecipeExporter implements ExportJob.PhaseRunner {
                 cj.addProperty("icon", iconRel);
             }
         } catch (Throwable t) {
-            ctx.failure("category icon " + uid + ": " + t);
+            ctx.failure("category icon " + uid, t);
         }
         JsonArray catalysts = new JsonArray();
         try {
@@ -173,7 +233,7 @@ final class RecipeExporter implements ExportJob.PhaseRunner {
             }
             catalystKeys.forEach(catalysts::add);
         } catch (Throwable t) {
-            ctx.failure("category catalysts " + uid + ": " + t);
+            ctx.failure("category catalysts " + uid, t);
         }
         cj.add("catalysts", catalysts);
         categoryJson = cj;
@@ -185,14 +245,19 @@ final class RecipeExporter implements ExportJob.PhaseRunner {
         JsonObject rj = new JsonObject();
         Set<String> inputKeys = new LinkedHashSet<>();
         Set<String> outputKeys = new LinkedHashSet<>();
+        ResourceLocation categoryUid = category.getRecipeType().getUid();
+        ResourceLocation recipeId = registryName(category, recipe);
+        Class<?> recipeClass = recipe == null ? null : recipe.getClass();
         try {
             Optional<IRecipeLayoutDrawable<?>> drawableOpt = createDrawable(category, recipe);
             if (drawableOpt.isEmpty()) {
-                ctx.failure(String.format(
+                ctx.warning(String.format(
                         Locale.ROOT,
-                        "recipe %s #%d: JEI returned no layout drawable; omitting the non-renderable placeholder",
+                        "recipe %s #%d (%s): JEI returned no layout drawable; omitting the "
+                                + "non-renderable placeholder",
                         catDir,
-                        idx));
+                        idx,
+                        recipeClass == null ? "unknown recipe class" : recipeClass.getName()));
                 return;
             }
             IRecipeLayoutDrawable<?> drawable = drawableOpt.get();
@@ -202,24 +267,13 @@ final class RecipeExporter implements ExportJob.PhaseRunner {
             int h = rect.getHeight() + PAD * 2;
             int scale = Math.max(1, Math.min(ctx.recipeScale, MAX_TEXTURE / Math.max(1, Math.max(w, h))));
 
-            NativeImage image = ctx.renderer.capture(w * scale, h * scale, g -> {
-                g.pose().pushPose();
-                try {
-                    g.pose().scale(scale, scale, 1f);
-                    g.fill(0, 0, w, h, BACKGROUND_ARGB);
-                    drawable.drawRecipe(g, -100, -100);
-                } finally {
-                    g.pose().popPose();
-                }
-            });
-            String imageName = "r" + exportedIndex + ".png";
-            ctx.saveImage(image, ctx.root.resolve(catDir).resolve(imageName));
-
-            ResourceLocation registryName = registryName(category, recipe);
-            if (registryName != null) {
-                rj.addProperty("id", registryName.toString());
+            if (recipeId != null) {
+                rj.addProperty("id", recipeId.toString());
             }
-            rj.addProperty("img", imageName);
+            var durationTicks = RecipeDuration.ticks(recipe);
+            if (durationTicks.isPresent()) {
+                rj.addProperty("durationTicks", durationTicks.getAsLong());
+            }
             rj.addProperty("w", w);
             rj.addProperty("h", h);
 
@@ -232,7 +286,6 @@ final class RecipeExporter implements ExportJob.PhaseRunner {
                 if (ingredients.isEmpty()) {
                     continue;
                 }
-                ResourceLocation categoryUid = category.getRecipeType().getUid();
                 if (ingredients.size() > LARGE_VARIANT_SET
                         && warnedLargeVariantCategories.add(categoryUid)) {
                     JeiExportMod.LOGGER.warn(
@@ -278,6 +331,8 @@ final class RecipeExporter implements ExportJob.PhaseRunner {
                     continue;
                 }
                 if (!slotArr.isEmpty() && !retainedSlotArr.isEmpty()) {
+                    // Alternatives are OR members. Publishing separate consumed and retained
+                    // slots would turn that into an AND requirement, so mixed slots stay consumed.
                     retainedSlotArr.forEach(slotArr::add);
                     retainedSlotArr = new JsonArray();
                     retainedSlotDetails.clear();
@@ -312,8 +367,61 @@ final class RecipeExporter implements ExportJob.PhaseRunner {
             if (retained.size() > 0) {
                 rj.add("retained", retained);
             }
+
+            String imageName = reuseRecipeImage(rj);
+            if (imageName == null) {
+                imageName = nextRecipeImageName();
+                String imageRelativePath = catDir + "/" + imageName;
+                NativeImage completeImage = ctx.renderer.capture(w * scale, h * scale, g -> {
+                    g.pose().pushPose();
+                    try {
+                        g.pose().scale(scale, scale, 1f);
+                        g.fill(0, 0, w, h, BACKGROUND_ARGB);
+                        drawable.drawRecipe(g, -100, -100);
+                    } finally {
+                        g.pose().popPose();
+                    }
+                });
+                NativeImage imageToSave = completeImage;
+                if (recipes.size() > 1) {
+                    RecipeImageLayering.Result layered = layerRecipeImage(completeImage, w, h, scale);
+                    if (layered.sharedPixelRatio() >= RecipeImageLayering.MINIMUM_SHARED_PIXEL_RATIO) {
+                        BaseLayer base = baseLayers.get(new LayoutKey(w, h, scale));
+                        rj.addProperty("bg", base.name);
+                        completeImage.close();
+                        layeredRecipePixels += layered.totalPixels();
+                        sharedRecipePixels += layered.sharedPixels();
+                        OverlayKey overlayKey = new OverlayKey(
+                                new LayoutKey(w, h, scale),
+                                layered.contentFingerprint());
+                        String identicalImageName = identicalRecipeOverlays.get(overlayKey);
+                        if (identicalImageName != null) {
+                            layered.overlay().close();
+                            imageName = identicalImageName;
+                            imageToSave = null;
+                            deduplicatedRecipeImages++;
+                            ctx.deduplicatedRecipeImages++;
+                        } else {
+                            identicalRecipeOverlays.put(overlayKey, imageName);
+                            imageToSave = layered.overlay();
+                        }
+                    } else {
+                        layered.overlay().close();
+                    }
+                }
+                if (imageToSave != null) {
+                    ctx.saveImage(imageToSave, ctx.root.resolve(imageRelativePath));
+                }
+            }
+            rj.addProperty("img", imageName);
         } catch (Throwable t) {
-            ctx.failure(String.format(Locale.ROOT, "recipe %s #%d: %s", catDir, idx, t));
+            ctx.recipeFailure(
+                    categoryUid,
+                    recipeId,
+                    idx,
+                    recipeClass,
+                    String.format(Locale.ROOT, "recipe %s #%d failed", catDir, idx),
+                    t);
             rj = new JsonObject();
             rj.addProperty("err", true);
             inputKeys.clear();
@@ -349,7 +457,85 @@ final class RecipeExporter implements ExportJob.PhaseRunner {
     }
 
     @Nullable
+    private String reuseRecipeImage(JsonObject currentRecipe) {
+        if (previousRecipes == null) {
+            return null;
+        }
+        IncrementalExportCache.CachedRecipe cached = previousRecipes.consume(currentRecipe);
+        if (cached == null) {
+            return null;
+        }
+        if (cached.baseImagePath() != null && cached.baseImageName() != null) {
+            String newBasePath = catDir + "/" + cached.baseImageName();
+            if (copiedBaseNames.add(cached.baseImageName())
+                    && !ctx.reusePreviousFile(cached.baseImagePath(), newBasePath)) {
+                copiedBaseNames.remove(cached.baseImageName());
+                return null;
+            }
+            currentRecipe.addProperty("bg", cached.baseImageName());
+        }
+        String imageName = fileName(cached.imagePath());
+        String imageRelativePath = catDir + "/" + imageName;
+        if (copiedRecipeImageNames.add(imageName)
+                && !ctx.reusePreviousFile(cached.imagePath(), imageRelativePath)) {
+            copiedRecipeImageNames.remove(imageName);
+            return null;
+        }
+        ctx.reusedRecipes++;
+        return imageName;
+    }
+
+    private String nextRecipeImageName() {
+        String candidate;
+        do {
+            candidate = "r" + nextRecipeImageIndex++ + ".png";
+        } while (reservedRecipeImageNames.contains(candidate));
+        return candidate;
+    }
+
+    private static String fileName(String relativePath) {
+        int slash = relativePath.lastIndexOf('/');
+        return slash < 0 ? relativePath : relativePath.substring(slash + 1);
+    }
+
+    private RecipeImageLayering.Result layerRecipeImage(
+            NativeImage completeImage,
+            int logicalWidth,
+            int logicalHeight,
+            int scale) {
+        LayoutKey key = new LayoutKey(logicalWidth, logicalHeight, scale);
+        BaseLayer base = baseLayers.get(key);
+        if (base == null) {
+            String name = nextBaseName();
+            base = new BaseLayer(RecipeImageLayering.copy(completeImage), name);
+            baseLayers.put(key, base);
+            reservedBaseNames.add(name);
+            ctx.saveImage(
+                    RecipeImageLayering.copy(base.image),
+                    ctx.root.resolve(catDir).resolve(name));
+        }
+        return RecipeImageLayering.difference(base.image, completeImage);
+    }
+
+    private String nextBaseName() {
+        String candidate;
+        do {
+            candidate = "bg" + nextBaseIndex++ + ".png";
+        } while (reservedBaseNames.contains(candidate));
+        return candidate;
+    }
+
+    @Nullable
     private String renderCategoryIcon(IRecipeCategory<?> category) {
+        ResourceLocation categoryId = category.getRecipeType().getUid();
+        if (ctx.previous != null) {
+            String previousIcon = ctx.previous.categoryIcon(categoryId);
+            String newIcon = catDir + "/icon.png";
+            if (previousIcon != null && ctx.reusePreviousFile(previousIcon, newIcon)) {
+                ctx.reusedCategoryIcons++;
+                return newIcon;
+            }
+        }
         IDrawable icon = category.getIcon();
         if (icon == null) {
             return null;
@@ -381,8 +567,30 @@ final class RecipeExporter implements ExportJob.PhaseRunner {
             GSON.toJson(recipesJson, writer);
         }
         ctx.recipeCount += recipesJson.size();
+        if (layeredRecipePixels > 0) {
+            JeiExportMod.LOGGER.info(
+                    "[jeiexport] Shared recipe screens for {} removed {} of {} repeated pixels ({}%)",
+                    catTitle,
+                    sharedRecipePixels,
+                    layeredRecipePixels,
+                    Math.round(sharedRecipePixels * 100.0 / layeredRecipePixels));
+        }
+        if (deduplicatedRecipeImages > 0) {
+            JeiExportMod.LOGGER.info(
+                    "[jeiexport] Reused {} identical recipe overlays for {}",
+                    deduplicatedRecipeImages,
+                    catTitle);
+        }
+        closeBaseLayers();
         recipesJson = null;
         categoryJson = null;
+    }
+
+    private void closeBaseLayers() {
+        for (BaseLayer base : baseLayers.values()) {
+            base.close();
+        }
+        baseLayers.clear();
     }
 
     /** Flush partial output if the export gets cancelled mid-category. */
@@ -390,6 +598,8 @@ final class RecipeExporter implements ExportJob.PhaseRunner {
     public void close() throws IOException {
         if (recipesJson != null) {
             flushCategory();
+        } else {
+            closeBaseLayers();
         }
     }
 
@@ -406,8 +616,8 @@ final class RecipeExporter implements ExportJob.PhaseRunner {
         } catch (Throwable t) {
             ResourceLocation uid = category.getRecipeType().getUid();
             if (warnedRegistryNameCategories.add(uid)) {
-                ctx.failure("recipe registry id " + uid + ": " + t
-                        + "; recipe ids for this category may be omitted");
+                ctx.failure("recipe registry id " + uid
+                        + " failed; recipe ids for this category may be omitted", t);
             }
             return null;
         }

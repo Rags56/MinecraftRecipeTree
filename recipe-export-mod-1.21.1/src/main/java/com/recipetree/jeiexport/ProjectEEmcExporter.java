@@ -154,15 +154,11 @@ final class ProjectEEmcExporter implements ExportJob.PhaseRunner {
     @Override public int done() { return done; }
     @Override public int total() { return total; }
 
-    private record EmcProxy(Object proxy, Method hasValue, Method getValue) {
+    static record EmcProxy(Object proxy, Method hasValue, Method getValue) {
         static EmcProxy load() throws ReflectiveOperationException {
-            Class<?> api = Class.forName("moze_intel.projecte.api.ProjectEAPI");
-            Method getProxy = api.getMethod("getEMCProxy");
-            Object proxy = getProxy.invoke(null);
-            if (proxy == null) {
-                throw new ReflectiveOperationException("ProjectEAPI.getEMCProxy() returned null");
-            }
-            Class<?> proxyApi = getProxy.getReturnType();
+            Class<?> proxyApi = Class.forName("moze_intel.projecte.api.proxy.IEMCProxy");
+            Object proxy = proxyApi.getField("INSTANCE").get(null);
+            if (proxy == null) throw new ReflectiveOperationException("IEMCProxy.INSTANCE returned null");
             return new EmcProxy(
                     proxy,
                     proxyApi.getMethod("hasValue", ItemStack.class),
@@ -175,7 +171,8 @@ final class ProjectEEmcExporter implements ExportJob.PhaseRunner {
 
         long value(ItemStack stack) throws ReflectiveOperationException {
             Object value = getValue.invoke(proxy, normalized(stack));
-            return value instanceof Number number ? number.longValue() : 0L;
+            if (!(value instanceof Number number)) throw new ReflectiveOperationException("ProjectE returned a nonnumeric EMC value: " + value);
+            return number.longValue();
         }
 
         private static ItemStack normalized(ItemStack stack) {

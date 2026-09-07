@@ -5,7 +5,7 @@ import com.google.gson.stream.JsonWriter;
 import java.io.IOException;
 
 /**
- * Publication-critical settings and telemetry shared by every 1.20.1 export entry point.
+ * Publication-critical settings and telemetry shared by every 1.21.1 export entry point.
  * Keeping these values in one contract prevents command and automatic exports from silently
  * producing snapshots that require different viewer quality profiles.
  */
