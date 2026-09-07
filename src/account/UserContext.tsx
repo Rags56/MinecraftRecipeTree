@@ -1,6 +1,7 @@
 import type {User} from '@supabase/supabase-js';
 import React, {createContext, useCallback, useContext, useEffect, useMemo, useRef, useState} from 'react';
 import {Platform} from 'react-native';
+import {performDiscordSignIn} from './discordSignIn';
 import {cleanFailedAccountAuthRedirect, supabaseAccountClient} from './supabaseClient';
 import {validDisplayName, validEmail, validPassword} from './userCredentials';
 import {recipeTreeUserIdentity} from './userIdentity';
@@ -34,6 +35,7 @@ interface UserContextValue {
 const UserContext = createContext<UserContextValue | null>(null);
 
 function currentReturnUrl(): string {
+  if (Platform.OS !== 'web') return 'minecraft-recipe-tree://auth/callback';
   if (typeof window === 'undefined') throw new Error('Account redirects require a browser window.');
   return `${window.location.origin}${window.location.pathname}`;
 }
@@ -67,13 +69,14 @@ export function UserProvider({children}: {children: React.ReactNode}) {
   }, []);
 
   const refresh = useCallback(async () => {
-    if (Platform.OS !== 'web') {
-      setStatus('anonymous');
-      setUser(null);
-      return;
-    }
     try {
       const client = await supabaseAccountClient();
+      if (Platform.OS !== 'web') {
+        const {data, error: sessionError} = await client.auth.getSession();
+        if (sessionError) throw sessionError;
+        applyUser(data.session?.user ?? null);
+        return;
+      }
       const {data, error: authError} = await client.auth.getUser();
       if (authError && authError.name !== 'AuthSessionMissingError') throw authError;
       applyUser(data.user ?? null);
@@ -86,10 +89,6 @@ export function UserProvider({children}: {children: React.ReactNode}) {
   }, [applyUser]);
 
   useEffect(() => {
-    if (Platform.OS !== 'web') {
-      setStatus('anonymous');
-      return;
-    }
     let alive = true;
     let unsubscribe: (() => void) | null = null;
     void supabaseAccountClient()
@@ -120,15 +119,8 @@ export function UserProvider({children}: {children: React.ReactNode}) {
   }, [applyUser, refresh]);
 
   const signInWithDiscord = useCallback(async () => {
-    if (Platform.OS !== 'web') {
-      throw new Error('Discord sign-in is currently available only in the web app.');
-    }
     const client = await supabaseAccountClient();
-    const {error: authError} = await client.auth.signInWithOAuth({
-      provider: 'discord',
-      options: {redirectTo: currentReturnUrl()},
-    });
-    if (authError) throw authError;
+    await performDiscordSignIn(client, currentReturnUrl());
   }, []);
 
   const sendMagicLink = useCallback(async (email: string) => {
@@ -176,14 +168,12 @@ export function UserProvider({children}: {children: React.ReactNode}) {
   }, []);
 
   const updateEmail = useCallback(async (email: string) => {
-    if (Platform.OS !== 'web') throw new Error('Account settings are available only in the web app.');
     const client = await supabaseAccountClient();
     const {error: authError} = await client.auth.updateUser({email: validEmail(email)});
     if (authError) throw authError;
   }, []);
 
   const updateDisplayName = useCallback(async (displayName: string) => {
-    if (Platform.OS !== 'web') throw new Error('Account settings are available only in the web app.');
     const client = await supabaseAccountClient();
     const {data, error: authError} = await client.auth.updateUser({
       data: {display_name: validDisplayName(displayName)},
@@ -194,14 +184,12 @@ export function UserProvider({children}: {children: React.ReactNode}) {
   }, [applyUser]);
 
   const updatePassword = useCallback(async (password: string) => {
-    if (Platform.OS !== 'web') throw new Error('Account settings are available only in the web app.');
     const client = await supabaseAccountClient();
     const {error: authError} = await client.auth.updateUser({password: validPassword(password)});
     if (authError) throw authError;
   }, []);
 
   const deleteAccount = useCallback(async () => {
-    if (Platform.OS !== 'web') throw new Error('Account deletion is available only in the web app.');
     const {accountFetch} = await import('./supabaseClient');
     const response = await accountFetch('/api/auth/account', {method: 'DELETE'});
     const body = await response.json().catch(() => null) as {error?: unknown} | null;
@@ -215,7 +203,6 @@ export function UserProvider({children}: {children: React.ReactNode}) {
   }, [applyUser]);
 
   const signOut = useCallback(async () => {
-    if (Platform.OS !== 'web') return;
     const client = await supabaseAccountClient();
     const {error: authError} = await client.auth.signOut();
     if (authError) throw authError;
