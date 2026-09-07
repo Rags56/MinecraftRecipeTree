@@ -24,6 +24,9 @@ public class JeiExportMod {
         if (FMLEnvironment.dist == Dist.CLIENT) {
             MinecraftForge.EVENT_BUS.register(ExportEvents.class);
             MinecraftForge.EVENT_BUS.register(RecipeTreeClient.class);
+            MinecraftForge.EVENT_BUS.register(RecipeTreeBook.class);
+            ModLoadingContext.get().registerConfig(net.minecraftforge.fml.config.ModConfig.Type.CLIENT,
+                    RecipeTreeBook.CONFIG_SPEC);
             FMLJavaModLoadingContext.get().getModEventBus().addListener(RecipeTreeClient::registerKeys);
         }
     }
