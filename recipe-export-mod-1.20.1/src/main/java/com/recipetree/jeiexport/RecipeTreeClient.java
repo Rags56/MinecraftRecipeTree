@@ -35,6 +35,7 @@ public final class RecipeTreeClient {
     private static int aeDiscoveryDelay;
     private static int aeDiscoveryPasses;
     private static RecipeTreeScreen lastViewedTree;
+    private static String worldScope;
 
     private RecipeTreeClient() {
     }
@@ -48,6 +49,15 @@ public final class RecipeTreeClient {
         if (event.phase != TickEvent.Phase.END) return;
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player == null) return;
+        String nextScope = minecraft.getSingleplayerServer() != null
+                ? "save:" + minecraft.getSingleplayerServer().getWorldPath(
+                        net.minecraft.world.level.storage.LevelResource.ROOT).toAbsolutePath().normalize()
+                : minecraft.getCurrentServer() != null ? "server:" + minecraft.getCurrentServer().ip : null;
+        if (!java.util.Objects.equals(worldScope, nextScope)) {
+            worldScope = nextScope;
+            lastViewedTree = null;
+            RecipeTreeProgress.get().setActiveWorld(nextScope);
+        }
         trackDiscoveredItems(minecraft);
 
         while (OPEN_PLANNER.consumeClick()) {
@@ -77,6 +87,8 @@ public final class RecipeTreeClient {
         // Recipe layouts belong to the current viewer runtime. Recreate the persisted tree after
         // the next world finishes loading instead of carrying cached layouts between worlds.
         lastViewedTree = null;
+        worldScope = null;
+        RecipeTreeProgress.get().setActiveWorld(null);
     }
 
     private static void trackDiscoveredItems(Minecraft minecraft) {
@@ -118,6 +130,20 @@ public final class RecipeTreeClient {
 
     @SubscribeEvent
     public static void onScreenKeyPressed(ScreenEvent.KeyPressed.Pre event) {
+        if (isPlannerScreen(event.getScreen()) && !isTyping(event.getScreen())
+                && Minecraft.getInstance().options.keyInventory.matches(event.getKeyCode(), event.getScanCode())) {
+            var minecraft = Minecraft.getInstance();
+            if (minecraft.player != null) {
+                event.setCanceled(true);
+                if (minecraft.gameMode != null && minecraft.gameMode.isServerControlledInventory()) {
+                    minecraft.player.sendOpenInventory();
+                } else {
+                    minecraft.getTutorial().onOpenInventory();
+                    minecraft.setScreen(new net.minecraft.client.gui.screens.inventory.InventoryScreen(minecraft.player));
+                }
+            }
+            return;
+        }
         if (!OPEN_PLANNER.matches(event.getKeyCode(), event.getScanCode())) return;
         if (isTyping(event.getScreen())) return;
 
@@ -141,6 +167,15 @@ public final class RecipeTreeClient {
             // Drain the mapping so the end-of-tick handler does not reopen the planner.
         }
         openForCurrentItem(minecraft);
+    }
+
+    private static boolean isPlannerScreen(Screen screen) {
+        return screen instanceof RecipeTreeScreen
+                || screen.getClass().getName().startsWith(RecipeTreeScreen.class.getName() + "$");
+    }
+
+    static boolean openFromBook() {
+        return reopenLastViewedTree(Minecraft.getInstance());
     }
 
     private static boolean isTyping(Screen screen) {

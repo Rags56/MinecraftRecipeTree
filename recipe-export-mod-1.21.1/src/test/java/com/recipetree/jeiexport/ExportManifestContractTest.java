@@ -16,6 +16,7 @@ final class ExportManifestContractTest {
         assertEquals(4, ExportManifestContract.DEFAULT_ICON_SCALE);
         assertEquals(2, ExportManifestContract.RECIPE_SCALE);
         assertEquals(256, ExportManifestContract.MOB_CANVAS);
+        assertEquals(1, IncrementalExportCache.CACHE_REVISION);
     }
 
     @Test

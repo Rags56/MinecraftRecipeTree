@@ -17,6 +17,7 @@ final class IngredientKeys {
     }
 
     static String typePrefix(IIngredientType<?> type) {
+        if (type == ProjectEPlanner.EMC) return "emc";
         if (type == VanillaTypes.ITEM_STACK) {
             return "item";
         }

@@ -25,3 +25,12 @@ export function itemIconSizeForContentScale(scale: number): number {
   const finiteScale = Number.isFinite(scale) ? scale : 1;
   return Math.max(1, Math.min(3, Math.round(finiteScale))) * LOGICAL_ITEM_ICON_GRID_SIZE;
 }
+
+/** Logical dimensions compensate a scaled native UI so artwork keeps its own scale. */
+export function itemGridDisplayMetrics(contentScale: number, renderedUiScale = 1) {
+  if (![contentScale, renderedUiScale].every(value => Number.isFinite(value) && value > 0)) {
+    throw new Error('Item grid scales must be positive finite numbers.');
+  }
+  const scale = contentScale / renderedUiScale;
+  return {scale, cellWidth: 104 * scale, iconSize: 48 * scale};
+}

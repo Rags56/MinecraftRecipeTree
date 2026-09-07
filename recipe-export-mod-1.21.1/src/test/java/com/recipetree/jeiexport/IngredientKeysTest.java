@@ -1,6 +1,7 @@
 package com.recipetree.jeiexport;
 
 import mezz.jei.api.ingredients.IIngredientType;
+import mezz.jei.api.neoforge.NeoForgeTypes;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -22,6 +23,11 @@ final class IngredientKeysTest {
     @Test
     void equalSimpleNamesFromDifferentModsDoNotCollide() {
         assertNotEquals(IngredientKeys.typePrefix(FIRST), IngredientKeys.typePrefix(SECOND));
+    }
+
+    @Test
+    void forgeFluidsUseTheCanonicalFluidPrefix() {
+        assertEquals("fluid", IngredientKeys.typePrefix(NeoForgeTypes.FLUID_STACK));
     }
 
     @Test

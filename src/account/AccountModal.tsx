@@ -1,7 +1,7 @@
+import {Modal} from '../ui/nativeUiScale';
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -45,6 +45,11 @@ export function AccountModal({
   interfaceZoom?: number;
   onClose(): void;
   onOpenDonations(): void;
+  onOpenHistory?(): void;
+  contentZoom?: number;
+  onInterfaceZoomChange?(direction: -1 | 1): void;
+  onContentZoomChange?(value: number): void;
+  onContentZoomComplete?(value: number): void;
 }) {
   const account = useUser();
   const themePreference = useThemePreference();

@@ -80,7 +80,7 @@ final class TradeExporter implements ExportJob.PhaseRunner {
         this.catIndex = ctx.registerCategory(categoryJson);
 
         if (server == null) {
-            ExportJob.chat("Villager trades need a singleplayer world (integrated server); skipping.",
+            ExportJob.chat("Villager trades can only be checked in a single-player world, so they were skipped.",
                     ChatFormatting.YELLOW);
         } else {
             for (var professionEntry : VillagerTrades.TRADES.entrySet()) {
@@ -99,7 +99,114 @@ final class TradeExporter implements ExportJob.PhaseRunner {
                         levelEntry.getValue()));
             }
         }
+        if (reusePreviousTrades()) {
+            queue.clear();
+        }
         this.total = queue.size();
+    }
+
+    private boolean reusePreviousTrades() throws IOException {
+        if (ctx.previous == null || !ctx.previous.canReuseTrades()) {
+            return false;
+        }
+        ResourceLocation categoryId = ResourceLocation.fromNamespaceAndPath(JeiExportMod.MOD_ID, "trading");
+        IncrementalExportCache.RecipeCategoryCache previousCategory = ctx.previous.recipeCategory(categoryId);
+        List<IncrementalExportCache.CachedRecipe> cachedRecipes = previousCategory.allRecipes();
+        if (ctx.previous.categoryCount(categoryId) != cachedRecipes.size()) {
+            JeiExportMod.LOGGER.info(
+                    "[jeiexport] Prior trade category is incomplete; resampling all trades");
+            return false;
+        }
+
+        for (String key : cachedIngredientKeys(cachedRecipes)) {
+            if (!catalog.restorePrevious(key)) {
+                JeiExportMod.LOGGER.info(
+                        "[jeiexport] Prior trade ingredient {} could not be restored; resampling all trades",
+                        key);
+                return false;
+            }
+        }
+
+        List<String> linkedImages = new ArrayList<>();
+        for (int index = 0; index < cachedRecipes.size(); index++) {
+            IncrementalExportCache.CachedRecipe cached = cachedRecipes.get(index);
+            String imageName = "r" + index + ".png";
+            String destination = dirName + "/" + imageName;
+            if (!ctx.reusePreviousFile(cached.imagePath(), destination)) {
+                for (String linkedImage : linkedImages) {
+                    Files.deleteIfExists(ctx.root.resolve(linkedImage));
+                }
+                while (!recipesJson.isEmpty()) {
+                    recipesJson.remove(recipesJson.size() - 1);
+                }
+                JeiExportMod.LOGGER.warn(
+                        "[jeiexport] Prior trade image reuse was incomplete; resampling all trades");
+                return false;
+            }
+            linkedImages.add(destination);
+            JsonObject recipe = cached.json().deepCopy();
+            recipe.addProperty("img", imageName);
+            recipesJson.add(recipe);
+            indexCachedRecipe(recipe, index);
+        }
+        ctx.reusedTrades += cachedRecipes.size();
+        JeiExportMod.LOGGER.info(
+                "[jeiexport] Reused {} complete trade records; skipped randomized trade sampling",
+                cachedRecipes.size());
+        return true;
+    }
+
+    static Set<String> cachedIngredientKeys(
+            List<IncrementalExportCache.CachedRecipe> cachedRecipes) {
+        Set<String> keys = new HashSet<>();
+        for (IncrementalExportCache.CachedRecipe cached : cachedRecipes) {
+            collectCachedSlotKeys(cached.json().getAsJsonArray("in"), keys);
+            collectCachedSlotKeys(cached.json().getAsJsonArray("out"), keys);
+        }
+        return keys;
+    }
+
+    private static void collectCachedSlotKeys(@Nullable JsonArray slots, Set<String> keys) {
+        if (slots == null) {
+            return;
+        }
+        for (var slotElement : slots) {
+            if (!slotElement.isJsonArray()) {
+                continue;
+            }
+            for (var pairElement : slotElement.getAsJsonArray()) {
+                if (pairElement.isJsonArray()
+                        && !pairElement.getAsJsonArray().isEmpty()
+                        && pairElement.getAsJsonArray().get(0).isJsonPrimitive()) {
+                    keys.add(pairElement.getAsJsonArray().get(0).getAsString());
+                }
+            }
+        }
+    }
+
+    private void indexCachedRecipe(JsonObject recipe, int index) {
+        indexCachedSlots(recipe.getAsJsonArray("in"), false, index);
+        indexCachedSlots(recipe.getAsJsonArray("out"), true, index);
+    }
+
+    private void indexCachedSlots(@Nullable JsonArray slots, boolean output, int index) {
+        if (slots == null) {
+            return;
+        }
+        Set<String> keys = new HashSet<>();
+        for (var slotElement : slots) {
+            if (!slotElement.isJsonArray()) {
+                continue;
+            }
+            for (var pairElement : slotElement.getAsJsonArray()) {
+                if (pairElement.isJsonArray() && !pairElement.getAsJsonArray().isEmpty()) {
+                    keys.add(pairElement.getAsJsonArray().get(0).getAsString());
+                }
+            }
+        }
+        for (String key : keys) {
+            ctx.indexRecipe(key, output, catIndex, index);
+        }
     }
 
     private static String professionName(@Nullable ResourceLocation profId, String path) {
@@ -131,13 +238,13 @@ final class TradeExporter implements ExportJob.PhaseRunner {
         try {
             offers = server.submit(() -> sampleUnit(unit)).join();
         } catch (Throwable t) {
-            ctx.failure("trades " + unit.idPrefix() + ": " + t);
+            ctx.failure("trades " + unit.idPrefix(), t);
         }
         for (MerchantOffer offer : offers) {
             try {
                 exportOffer(unit, offer);
             } catch (Throwable t) {
-                ctx.failure("trade render " + unit.idPrefix() + ": " + t);
+                ctx.failure("trade render " + unit.idPrefix(), t);
             }
         }
         return queue.isEmpty();

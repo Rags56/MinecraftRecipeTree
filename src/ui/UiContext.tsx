@@ -3,7 +3,7 @@ import {Platform} from 'react-native';
 import {RecipeRef} from '../types';
 import type {GraphDirection} from '../graph/direction';
 
-export type Tab = 'items' | 'graph' | 'mobs';
+export type Tab = 'items' | 'graph' | 'mobs' | 'settings';
 
 function loadAnimateMobs(): boolean {
   try {

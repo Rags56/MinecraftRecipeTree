@@ -1,3 +1,4 @@
+import {NativeUiScale, useRenderedScale} from '../ui/nativeUiScale';
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {
   FlatList,
@@ -27,6 +28,7 @@ import {theme} from '../theme';
 import {CatalogItem} from '../types';
 import {useUi} from '../ui/UiContext';
 import {ItemIcon} from './ItemIcon';
+import {itemGridDisplayMetrics} from './itemIconSizing';
 import {ModFilter, SearchBar} from './SearchBar';
 
 const MAX_RESULTS = 800;
@@ -201,6 +203,7 @@ export function ItemsScreen({
 
   return (
     <View style={[styles.root, scaledInterfaceStyle]}>
+      <NativeUiScale>
       <View style={styles.stickyControls}>
         <View style={styles.controlsRow}>
           <SearchBar
@@ -237,9 +240,10 @@ export function ItemsScreen({
           </View>
         )}
       </View>
+      </NativeUiScale>
       <FlatList
         style={[styles.grid, scaledGridStyle]}
-        key={`grid-${columns}-${contentZoom}`}
+        key={Platform.OS === 'web' ? `grid-${columns}-${contentZoom}` : `grid-${columns}`}
         data={shown}
         numColumns={columns}
         keyExtractor={i => i.k}
@@ -256,51 +260,40 @@ export function ItemsScreen({
           </View>
         }
         renderItem={({item}) => {
-          const typeLabel = catalogTypePresentation(item.t)?.label;
           const gatedStages = recipeStages.catalog.stagesByItemKey.get(item.k) ?? [];
-          const allGatedRecipesHidden =
-            gatedStages.length > 0 &&
-            gatedStages.every(stage => recipeStages.hiddenStages.has(stage));
-          const stageLabel =
-            gatedStages.length === 1
-              ? gatedStages[0]
-              : `${gatedStages.length} stages`;
-          return (
-            <TouchableOpacity
-              {...signalTarget('items.item.open')}
-              style={[
-                styles.cell,
-                gatedStages.length > 0 && styles.gatedCell,
-                {width: `${100 / columns}%` as never},
-              ]}
-              onPress={() => openItem(item.k)}
-              accessibilityRole="button"
-              accessibilityLabel={`${item.n}${gatedStages.length > 0 ? `, has recipes gated by ${gatedStages.join(', ')}` : ''}`}>
-              <ItemIcon item={item} size={48} />
-              <Text style={styles.cellName} numberOfLines={2}>
-                {item.n}
-              </Text>
-              {typeLabel && (
-                <Text style={styles.typeBadge} numberOfLines={1}>
-                  {typeLabel}
-                </Text>
-              )}
-              {gatedStages.length > 0 && (
-                <Text
-                  style={[
-                    styles.stageBadge,
-                    allGatedRecipesHidden && styles.stageBadgeHidden,
-                  ]}
-                  numberOfLines={1}>
-                  ⚑ {stageLabel}
-                  {allGatedRecipesHidden ? ' · hidden' : ''}
-                </Text>
-              )}
-            </TouchableOpacity>
-          );
+          return <ItemGridCell
+            item={item}
+            zoom={Platform.OS === 'web' ? 1 : contentZoom}
+            width={`${100 / columns}%`}
+            stages={gatedStages}
+            allHidden={gatedStages.length > 0 && gatedStages.every(stage => recipeStages.hiddenStages.has(stage))}
+            onPress={() => openItem(item.k)}
+          />;
         }}
       />
     </View>
+  );
+}
+
+export function ItemGridCell({item, zoom, width, stages = [], allHidden = false, onPress}: {
+  item: CatalogItem; zoom: number; width: `${number}%`;
+  stages?: readonly string[]; allHidden?: boolean; onPress?(): void;
+}) {
+  const renderedScale = useRenderedScale();
+  const {scale, iconSize} = itemGridDisplayMetrics(zoom, renderedScale);
+  const typeLabel = catalogTypePresentation(item.t)?.label;
+  return (
+    <TouchableOpacity
+      {...(onPress ? signalTarget('items.item.open') : {})}
+      style={[styles.cell, stages.length > 0 && styles.gatedCell, {width, paddingVertical: 10 * scale, paddingHorizontal: 4 * scale}]}
+      disabled={!onPress} onPress={onPress} accessibilityRole={onPress ? 'button' : 'image'} accessibilityLabel={item.n}>
+      <ItemIcon item={item} size={iconSize} />
+      <Text style={[styles.cellName, {fontSize: 11 * scale, marginTop: 5 * scale}]} numberOfLines={2}>{item.n}</Text>
+      {typeLabel && <Text style={[styles.typeBadge, {fontSize: 9 * scale}]} numberOfLines={1}>{typeLabel}</Text>}
+      {stages.length > 0 && <Text style={[styles.stageBadge, {fontSize: 8 * scale}, allHidden && styles.stageBadgeHidden]} numberOfLines={1}>
+        ⚑ {stages.length === 1 ? stages[0] : `${stages.length} stages`}{allHidden ? ' · hidden' : ''}
+      </Text>}
+    </TouchableOpacity>
   );
 }
 

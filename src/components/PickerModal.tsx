@@ -1,6 +1,6 @@
+import {Modal} from '../ui/nativeUiScale';
 import React, {useMemo, useState} from 'react';
 import {
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -17,7 +17,7 @@ import {theme} from '../theme';
 import {uniformPickerRecipePreviewSize} from '../ui/interfaceZoom';
 import type {GraphDirection} from '../graph/direction';
 import {pixelated} from './ItemIcon';
-import {ItemChip} from './RecipeCard';
+import {ItemChip, RecipeImageViewport} from './RecipeCard';
 import {RecipePreviewImage} from './RecipePreviewImage';
 import {VisibilityIcon} from './VisibilityIcon';
 import {groupPickerOptions} from './pickerGroups';
@@ -164,7 +164,7 @@ export function PickerModal({
           ]}
           onPress={() => {}}>
           <Text style={styles.title}>{title}</Text>
-          {onContentZoomChange ? (
+          {Platform.OS === 'web' && onContentZoomChange ? (
             <ContentZoomControl
               value={contentZoom}
               onValueChange={onContentZoomChange}
@@ -352,7 +352,9 @@ export function PickerModal({
                   <View style={styles.optionGrid}>
                     {group.entries.map(({option: opt, index: i}) => {
                       const imageSize = opt.imageUri
-                        ? uniformPickerRecipePreviewSize(
+                        ? Platform.OS !== 'web'
+                          ? {width: (opt.imageW ?? 160) * contentZoom / interfaceZoom, height: (opt.imageH ?? 60) * contentZoom / interfaceZoom}
+                          : uniformPickerRecipePreviewSize(
                             opt.imageW ?? 160,
                             opt.imageH ?? 60,
                             contentZoom,
@@ -373,6 +375,7 @@ export function PickerModal({
                               contentScale={contentZoom}
                             />
                           ) : opt.imageUri && imageSize ? (
+                            <RecipeImageViewport>
                             <RecipePreviewImage
                               uri={opt.imageUri}
                               backgroundUri={opt.imageBackgroundUri}
@@ -380,6 +383,7 @@ export function PickerModal({
                               style={[imageSize, styles.optionImage, pixelated as object]}
                               resizeMode="contain"
                             />
+                            </RecipeImageViewport>
                           ) : null}
                           {!opt.structure && opt.inputs && opt.inputs.length > 0 ? (
                             <View style={styles.ingredientGroup}>

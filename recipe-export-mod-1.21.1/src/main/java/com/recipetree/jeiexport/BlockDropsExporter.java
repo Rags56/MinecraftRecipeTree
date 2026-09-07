@@ -43,7 +43,8 @@ import java.util.Map;
  * (the integrated server) since loot rolls run server-side.
  */
 final class BlockDropsExporter implements ExportJob.PhaseRunner {
-    private static final int BATCH = 24;
+    /** One expensive loot-sampling unit per scheduler step prevents multi-second tick spikes. */
+    private static final int BATCH = 1;
     private static final int CANDIDATE_ROLLS = 64;
     private static final int FINAL_ROLLS = 512;
     private static final int SILK_ROLLS = 128;
@@ -57,6 +58,7 @@ final class BlockDropsExporter implements ExportJob.PhaseRunner {
     private int done;
     private final JsonObject blocks = new JsonObject();
     private boolean written;
+    private boolean blockCacheAvailable = true;
 
     BlockDropsExporter(ExportContext ctx) {
         this.ctx = ctx;
@@ -69,7 +71,7 @@ final class BlockDropsExporter implements ExportJob.PhaseRunner {
                 }
             }
         } else {
-            ExportJob.chat("Block drops need a singleplayer world (integrated server); skipping.", ChatFormatting.YELLOW);
+            ExportJob.chat("Block drops can only be checked in a single-player world, so they were skipped.", ChatFormatting.YELLOW);
         }
         this.total = queue.size();
     }
@@ -83,21 +85,58 @@ final class BlockDropsExporter implements ExportJob.PhaseRunner {
         for (int i = 0; i < BATCH && !queue.isEmpty(); i++) {
             batch.add(queue.poll());
         }
+        List<BlockItem> missing = new ArrayList<>(batch.size());
+        for (BlockItem item : batch) {
+            if (!reuseBlockDrop(item)) {
+                missing.add(item);
+            }
+        }
+        if (missing.isEmpty()) {
+            done += batch.size();
+            return queue.isEmpty();
+        }
         try {
             server.submit(() -> {
-                for (BlockItem item : batch) {
+                for (BlockItem item : missing) {
                     try {
                         sampleOne(item);
                     } catch (Throwable t) {
-                        ctx.failure("blockdrops " + BuiltInRegistries.ITEM.getKey(item) + ": " + t);
+                        ctx.failure("blockdrops " + BuiltInRegistries.ITEM.getKey(item), t);
                     }
                 }
             }).join();
         } catch (Throwable t) {
-            ctx.failure("blockdrops batch: " + t);
+            ctx.failure("blockdrops batch", t);
         }
         done += batch.size();
         return queue.isEmpty();
+    }
+
+    private boolean reuseBlockDrop(BlockItem item) {
+        if (ctx.previous == null || !blockCacheAvailable) {
+            return false;
+        }
+        ResourceLocation id = BuiltInRegistries.ITEM.getKey(item);
+        if (id == null) {
+            return false;
+        }
+        String key = "item|" + id;
+        try {
+            JsonObject previousDrop = ctx.previous.blockDrop(key);
+            if (previousDrop == null) {
+                return false;
+            }
+            blocks.add(key, previousDrop.deepCopy());
+            ctx.blockDropsCount++;
+            ctx.reusedBlockDrops++;
+            return true;
+        } catch (IOException cacheFailure) {
+            blockCacheAvailable = false;
+            JeiExportMod.LOGGER.warn(
+                    "[jeiexport] Block-drop cache lookup failed; sampling remaining blocks again",
+                    cacheFailure);
+            return false;
+        }
     }
 
     /** Runs on the server thread. */
@@ -112,7 +151,7 @@ final class BlockDropsExporter implements ExportJob.PhaseRunner {
             }
         }
         LootTable table = server.reloadableRegistries().getLootTable(block.getLootTable());
-        if (table == LootTable.EMPTY) {
+        if (LootSampler.isStructurallyEmpty(table)) {
             return;
         }
         Vec3 origin = Vec3.atCenterOf(level.getSharedSpawnPos());

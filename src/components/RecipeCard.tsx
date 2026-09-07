@@ -1,5 +1,6 @@
+import {useRenderedScale} from '../ui/nativeUiScale';
 import React from 'react';
-import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {recipeImagePath, useData} from '../data/DataContext';
 import {
   recipeHasStructurePreview,
@@ -29,6 +30,7 @@ import {
   RECIPE_CARD_BORDER_WIDTH,
   RECIPE_CARD_PADDING,
   responsiveRecipePreviewSize,
+  nativeRecipePreviewSize,
 } from './recipePreviewSizing';
 import {MultiblockPreview} from './MultiblockPreview';
 
@@ -73,6 +75,7 @@ export function RecipeCard({
 }) {
   const data = useData();
   const {openItem} = useUi();
+  const renderedScale = useRenderedScale();
   const presentation = recipePresentationKind(recipe);
   const emcTransmutation = projecteEmcTransmutation(recipe);
   if (presentation === 'failure') {
@@ -82,7 +85,7 @@ export function RecipeCard({
       </View>
     );
   }
-  const previewSize = responsiveRecipePreviewSize(
+  const previewSize = Platform.OS !== 'web' ? nativeRecipePreviewSize(recipe.w ?? 160, recipe.h ?? 60, data.manifest.settings.recipeScale, availableCardWidth, contentZoom, renderedScale) : responsiveRecipePreviewSize(
     recipe.w ?? 160,
     recipe.h ?? 60,
     data.manifest.settings.recipeScale,
@@ -118,6 +121,7 @@ export function RecipeCard({
         </View>
       ) : null}
       {!recipe.structure && presentation === 'image' && recipe.img ? (
+        <RecipeImageViewport>
         <RecipePreviewImage
           uri={data.imageUrl(recipeImagePath(dir, recipe.img))!}
           backgroundUri={
@@ -131,6 +135,7 @@ export function RecipeCard({
           ]}
           resizeMode="contain"
         />
+        </RecipeImageViewport>
       ) : !recipe.structure && !emcTransmutation ? (
         <Text style={styles.previewUnavailable}>
           Structured recipe · layout preview unavailable
@@ -218,6 +223,14 @@ export function RecipeCard({
   );
 }
 
+export function RecipeImageViewport({children}: {children: React.ReactNode}) {
+  return Platform.OS === 'web' ? <>{children}</> : (
+    <ScrollView horizontal style={{width: '100%', flexGrow: 0}} contentContainerStyle={{alignItems: 'flex-start'}}>
+      {children}
+    </ScrollView>
+  );
+}
+
 export function ItemChip({
   itemKey,
   amount,
@@ -258,13 +271,14 @@ export function ItemChip({
     tag,
     data.descriptor.minecraftVersion,
   );
-  const textScale = contentTextScale(contentScale);
+  const renderedScale = useRenderedScale();
+  const textScale = contentTextScale(contentScale) / renderedScale;
   const content = (
     <>
       <ItemIcon
         item={item}
         itemKey={itemKey}
-        size={itemIconSizeForContentScale(contentScale)}
+        size={Platform.OS === 'web' ? itemIconSizeForContentScale(contentScale) : 16 * contentScale / renderedScale}
       />
       <Text
         style={[styles.chipText, {fontSize: Math.max(9, 11 * textScale)}]}

@@ -3318,6 +3318,18 @@ export function GraphScreen({
     [applyTransform, clearWebSelection, zoomAt],
   );
 
+  const treeShareModal = (
+    <TreeShareModal
+      visible={showTreeShare}
+      mode={treeTransferMode}
+      interfaceZoom={interfaceZoom}
+      onClose={closeTreeShare}
+      onShare={shareCurrentTree}
+      onImport={importPortableTree}
+      onChooseFile={pickPortableTreeFile}
+    />
+  );
+
   if (!graphRootKey || !root) {
     return (
       <View style={styles.emptyWrap}>
@@ -3332,6 +3344,7 @@ export function GraphScreen({
           onPress={() => setTab('items')}>
           <Text style={styles.emptyBtnText}>Browse items</Text>
         </TouchableOpacity>
+        {treeShareModal}
       </View>
     );
   }
@@ -3347,7 +3360,7 @@ export function GraphScreen({
   const graphMenuScaleStyle =
     Platform.OS === 'web'
       ? ({zoom: interfaceZoom} as unknown as object)
-      : null;
+      : {transform: [{scale: interfaceZoom}], transformOrigin: 'top right', maxWidth: `${96 / interfaceZoom}%`} as const;
   const nodeMenuDirection: GraphDirection =
     nodeMenu?.node.id === 'root' ? 'inputs' : graphDirection;
   const nodeMenuChoiceCount = nodeMenu
@@ -3818,7 +3831,7 @@ export function GraphScreen({
         {...signalTarget('graph.control.fit')}
         accessibilityRole="button"
         accessibilityLabel="Fit graph to view"
-        style={[styles.ctrlBtn, styles.fitControl, graphMenuScaleStyle]}
+        style={[styles.ctrlBtn, styles.fitControl, graphMenuScaleStyle, Platform.OS !== 'web' && {transformOrigin: 'bottom left'}]}
         onPress={fitView}>
         <Text style={[styles.ctrlBtnText, styles.fitControlIcon]}>⛶</Text>
       </TouchableOpacity>
@@ -4118,15 +4131,7 @@ export function GraphScreen({
           }
         />
       )}
-      <TreeShareModal
-        visible={showTreeShare}
-        mode={treeTransferMode}
-        interfaceZoom={interfaceZoom}
-        onClose={closeTreeShare}
-        onShare={shareCurrentTree}
-        onImport={importPortableTree}
-        onChooseFile={pickPortableTreeFile}
-      />
+      {treeShareModal}
       <RecipeImportDetailsModal
         report={showRecipeImportDetails ? recipeImportReport : null}
         interfaceZoom={interfaceZoom}

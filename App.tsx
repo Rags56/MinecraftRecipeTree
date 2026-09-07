@@ -1,5 +1,6 @@
 'use client';
 
+import {InterfaceScaleContext, NativeUiScale} from './src/ui/nativeUiScale';
 import {StatusBar} from 'expo-status-bar';
 import React, {Suspense, useEffect, useMemo, useRef, useState} from 'react';
 import {
@@ -124,6 +125,13 @@ const LazyDonationsModal = React.lazy(async () => {
 });
 
 function DeferredModalFallback({label}: {label: string}) {
+  // Replacing one native Modal with another races UIKit's dismissal animation.
+  if (Platform.OS !== 'web') return (
+    <View style={[StyleSheet.absoluteFill, styles.deferredModalBackdrop, {zIndex: 1000}]} accessibilityRole="progressbar">
+      <ActivityIndicator color={theme.accent} size="large" />
+      <Text style={styles.loadingText}>Loading {label}…</Text>
+    </View>
+  );
   return (
     <Modal visible transparent animationType="fade">
       <View style={styles.deferredModalBackdrop} accessibilityRole="progressbar">
@@ -476,6 +484,8 @@ function Shell({
   const [showRecipeHistory, setShowRecipeHistory] = useState(false);
   const [showFavorites, setShowFavorites] = useState(false);
   const [showSignIn, setShowSignIn] = useState(false);
+  const accountButtonRef = useRef<React.ElementRef<typeof TouchableOpacity>>(null);
+  const [signInAnchor, setSignInAnchor] = useState<{x: number; y: number; width: number; height: number}>();
   const [showAccount, setShowAccount] = useState(false);
   const [showDonations, setShowDonations] = useState(false);
   const [donationOutcome, setDonationOutcome] = useState<'success' | 'canceled' | null>(null);
@@ -483,7 +493,10 @@ function Shell({
   const [showGraphGuide, setShowGraphGuide] = useState(false);
   const [showIssueReport, setShowIssueReport] = useState(false);
   const [hasVisitedMobs, setHasVisitedMobs] = useState(tab === 'mobs');
+  const [hasVisitedSettings, setHasVisitedSettings] = useState(tab === 'settings');
   const [showInfoMenu, setShowInfoMenu] = useState(false);
+  const infoMenuAnchorRef = useRef<View>(null);
+  const [nativeMenuRight, setNativeMenuRight] = useState(0);
   const [showAppMenu, setShowAppMenu] = useState(false);
   const [recipeImportRequestId, setRecipeImportRequestId] = useState(0);
   const [recipeImportJob, setRecipeImportJob] = useState<{
@@ -545,6 +558,11 @@ function Shell({
   }, []);
   useEffect(() => {
     if (tab === 'mobs') setHasVisitedMobs(true);
+    if (tab === 'settings') setHasVisitedSettings(true);
+    if (Platform.OS !== 'web') {
+      setShowInfoMenu(false);
+      setShowAppMenu(false);
+    }
   }, [tab]);
   useEffect(() => {
     if (account.user) setShowSignIn(false);
@@ -580,7 +598,6 @@ function Shell({
     });
   }, [data, tab]);
   useEffect(() => {
-    if (Platform.OS !== 'web') return;
     const storedInterfaceZoom = loadInterfaceZoom();
     setInterfaceZoom(storedInterfaceZoom);
     setContentZoom(loadContentZoom(storedInterfaceZoom));
@@ -676,7 +693,7 @@ function Shell({
       />
     </View>
   ) : null;
-  const headerDetails = compactHeader ? (
+  const headerDetails = compactHeader && Platform.OS === 'web' ? (
     <View style={styles.headerDetails}>{interfaceZoomControls}</View>
   ) : null;
   const fullWidthHeaderControls = !compactHeader ? (
@@ -686,12 +703,18 @@ function Shell({
     </View>
   ) : null;
   const closeInfoMenu = () => setShowInfoMenu(false);
+  const closeHeaderMenus = () => {
+    setShowInfoMenu(false);
+    setShowAppMenu(false);
+  };
   const openCraftingTreeImport = () => {
     setTab('graph');
     setRecipeImportRequestId(value => value + 1);
   };
   const infoMenu = (
     <View
+      ref={infoMenuAnchorRef}
+      collapsable={false}
       style={styles.infoMenuAnchor}
       onPointerDown={event => event.stopPropagation()}
       onTouchStart={event => event.stopPropagation()}>
@@ -704,6 +727,15 @@ function Shell({
         ]}
         onPress={() => {
           lightImpactFeedback();
+          if (Platform.OS !== 'web' && !showInfoMenu) {
+            // Keep the dropdown attached to its button and inside narrow phone screens.
+            infoMenuAnchorRef.current?.measureInWindow((x, _y, buttonWidth) => {
+              setNativeMenuRight(Math.min(0, (x + buttonWidth) / interfaceZoom - Math.min(224, width / interfaceZoom - 24) - 12));
+              setShowAppMenu(false);
+              setShowInfoMenu(true);
+            });
+            return;
+          }
           setShowInfoMenu(value => {
             const next = !value;
             if (next) setShowAppMenu(false);
@@ -725,28 +757,38 @@ function Shell({
         <View
           style={[
             styles.infoMenu,
-            Platform.OS === 'web' ? styles.webInfoMenuPosition : styles.nativeInfoMenuPosition,
+            Platform.OS === 'web' ? styles.webInfoMenuPosition : [styles.nativeInfoMenuPosition, {right: nativeMenuRight, width: Math.min(224, width / interfaceZoom - 24)}],
           ]}
           accessibilityRole="menu">
           {(compactHeader || Platform.OS !== 'web') && (
             <TouchableOpacity
-              {...signalTarget('header.import-pack')}
-              style={styles.infoMenuItem}
+              {...signalTarget(Platform.OS === 'web' ? 'header.import-pack' : 'header.import-tree')}
+              style={[styles.infoMenuItem, Platform.OS !== 'web' && styles.nativeInfoMenuItem]}
               onPress={() => {
                 lightImpactFeedback();
                 closeInfoMenu();
-                onImportPack();
+                if (Platform.OS === 'web') onImportPack();
+                else openCraftingTreeImport();
               }}
               accessibilityRole="button"
-              accessibilityLabel="Import a local modpack exporter ZIP">
+              accessibilityLabel={Platform.OS === 'web' ? 'Import a local modpack exporter ZIP' : 'Import a crafting tree from JSON'}>
               <Text style={styles.infoMenuItemIcon}>⇧</Text>
-              <Text style={styles.infoMenuItemText}>Import pack</Text>
+              <Text style={styles.infoMenuItemText}>{Platform.OS === 'web' ? 'Import pack' : 'Import tree'}</Text>
+            </TouchableOpacity>
+          )}
+          {Platform.OS !== 'web' && recipeStages.catalog.stages.length > 0 && (
+            <TouchableOpacity
+              style={[styles.infoMenuItem, styles.nativeInfoMenuItem]}
+              onPress={() => {closeInfoMenu(); setShowRecipeStages(true);}}
+              accessibilityRole="button" accessibilityLabel="Open recipe stage controls">
+              <Text style={styles.infoMenuItemIcon}>⚑</Text>
+              <Text style={styles.infoMenuItemText}>Recipe stages</Text>
             </TouchableOpacity>
           )}
           {Platform.OS === 'web' && (
             <TouchableOpacity
               {...signalTarget('header.donations')}
-              style={styles.infoMenuItem}
+              style={[styles.infoMenuItem, Platform.OS !== 'web' && styles.nativeInfoMenuItem]}
               onPress={() => {
                 lightImpactFeedback();
                 closeInfoMenu();
@@ -759,10 +801,9 @@ function Shell({
               <Text style={styles.infoMenuItemText}>Support Recipe Tree</Text>
             </TouchableOpacity>
           )}
-          {Platform.OS === 'web' && (
             <TouchableOpacity
               {...signalTarget('header.recipe-favorites')}
-              style={styles.infoMenuItem}
+              style={[styles.infoMenuItem, Platform.OS !== 'web' && styles.nativeInfoMenuItem]}
               onPress={() => {
                 lightImpactFeedback();
                 closeInfoMenu();
@@ -773,10 +814,9 @@ function Shell({
               <Text style={styles.infoMenuItemIcon}>★</Text>
               <Text style={styles.infoMenuItemText}>Favorites</Text>
             </TouchableOpacity>
-          )}
           <TouchableOpacity
             {...signalTarget('header.graph-guide')}
-            style={styles.infoMenuItem}
+            style={[styles.infoMenuItem, Platform.OS !== 'web' && styles.nativeInfoMenuItem]}
             onPress={() => {
               lightImpactFeedback();
               closeInfoMenu();
@@ -789,7 +829,7 @@ function Shell({
           </TouchableOpacity>
           <TouchableOpacity
             {...signalTarget('header.issue-report')}
-            style={styles.infoMenuItem}
+            style={[styles.infoMenuItem, Platform.OS !== 'web' && styles.nativeInfoMenuItem]}
             onPress={() => {
               lightImpactFeedback();
               closeInfoMenu();
@@ -805,7 +845,7 @@ function Shell({
           </TouchableOpacity>
           <TouchableOpacity
             {...signalTarget('header.recipe-history')}
-            style={styles.infoMenuItem}
+            style={[styles.infoMenuItem, Platform.OS !== 'web' && styles.nativeInfoMenuItem]}
             onPress={() => {
               lightImpactFeedback();
               closeInfoMenu();
@@ -820,15 +860,30 @@ function Shell({
       )}
     </View>
   );
-  const accountHeaderAction = Platform.OS === 'web' ? (
+  const accountHeaderAction = (
     <TouchableOpacity
+      ref={accountButtonRef}
       {...signalTarget('header.account')}
       style={[styles.accountHeaderButton, account.user && styles.accountHeaderButtonSignedIn]}
       onPress={() => {
         lightImpactFeedback();
-        if (account.user) setShowAccount(true);
-        else setShowSignIn(true);
+        if (account.user) {
+          if (Platform.OS === 'web') setShowAccount(true);
+          else setTab('settings');
+        }
+        else if (Platform.OS !== 'web') {
+          closeHeaderMenus();
+          accountButtonRef.current?.measureInWindow((x, y, width, height) => {
+            setSignInAnchor({x, y, width, height});
+            setShowSignIn(true);
+          });
+        } else setShowSignIn(true);
       }}
+      onLayout={Platform.OS !== 'web' && showSignIn ? () => {
+        accountButtonRef.current?.measureInWindow((x, y, width, height) => {
+          setSignInAnchor({x, y, width, height});
+        });
+      } : undefined}
       accessibilityRole="button"
       accessibilityLabel={
         account.user
@@ -842,7 +897,7 @@ function Shell({
         {account.status === 'loading' ? 'Checking…' : account.user?.displayName ?? 'Sign in'}
       </Text>
     </TouchableOpacity>
-  ) : null;
+  );
   const headerActions = (
     <View
       style={[
@@ -881,11 +936,13 @@ function Shell({
   const headerMenuAction = Platform.OS !== 'web' ? infoMenu : null;
   const headerTrailingAction = accountHeaderAction;
   return (
+    <InterfaceScaleContext.Provider value={interfaceZoom}>
     <View
       style={styles.shell}
-      onPointerDown={showInfoMenu ? closeInfoMenu : undefined}
-      onTouchStart={showInfoMenu ? closeInfoMenu : undefined}>
-      <View style={[styles.headerSurface, scaledHeaderStyle]}>
+      onPointerDown={showInfoMenu || (Platform.OS !== 'web' && showAppMenu) ? closeHeaderMenus : undefined}
+      onTouchStart={showInfoMenu || (Platform.OS !== 'web' && showAppMenu) ? closeHeaderMenus : undefined}>
+      <View style={[styles.headerSurface, scaledHeaderStyle, Platform.OS !== 'web' && tab === 'settings' && styles.hidden]}>
+        <NativeUiScale>
         {renderControls(
           data.manifest,
           headerDetails,
@@ -900,6 +957,7 @@ function Shell({
           },
           openCraftingTreeImport,
         )}
+        </NativeUiScale>
       </View>
       <View style={styles.workspaceViewport}>
         <View style={styles.workspace}>
@@ -1005,6 +1063,32 @@ function Shell({
               </View>
             )}
           </View>
+          {Platform.OS !== 'web' && (hasVisitedSettings || tab === 'settings') && (
+            <View
+              style={[styles.body, styles.nativeWorkspacePane, tab === 'settings' ? styles.nativeWorkspacePaneActive : styles.nativeWorkspacePaneInactive]}
+              pointerEvents={tab === 'settings' ? 'auto' : 'none'}
+              accessibilityElementsHidden={tab !== 'settings'}
+              importantForAccessibility={tab !== 'settings' ? 'no-hide-descendants' : 'auto'}>
+              <Suspense fallback={(
+                <View style={styles.center} accessibilityRole="progressbar">
+                  <ActivityIndicator color={theme.accent} />
+                  <Text style={styles.loadingText}>Loading settings…</Text>
+                </View>
+              )}>
+                <LazyAccountModal
+                  visible={tab === 'settings'}
+                  onClose={() => setTab('items')}
+                  interfaceZoom={interfaceZoom}
+                  contentZoom={contentZoom}
+                  onInterfaceZoomChange={adjustInterfaceZoom}
+                  onContentZoomChange={previewContentZoom}
+                  onContentZoomComplete={saveContentZoom}
+                  onOpenHistory={() => setShowRecipeHistory(true)}
+                  onOpenDonations={() => setShowDonations(true)}
+                />
+              </Suspense>
+            </View>
+          )}
           {data.capabilities.mobs && hasVisitedMobs && (
             <View
               style={[
@@ -1081,11 +1165,12 @@ function Shell({
           <LazySignInModal
             visible
             interfaceZoom={interfaceZoom}
+            anchor={signInAnchor}
             onClose={() => setShowSignIn(false)}
           />
         </Suspense>
       )}
-      {showAccount && (
+      {Platform.OS === 'web' && showAccount && (
         <Suspense fallback={<DeferredModalFallback label="account" />}>
           <LazyAccountModal
             visible
@@ -1138,6 +1223,7 @@ function Shell({
         </Suspense>
       )}
     </View>
+    </InterfaceScaleContext.Provider>
   );
 }
 
@@ -1164,6 +1250,7 @@ function MobileBottomNavigation({hasMobs}: {hasMobs: boolean}) {
       {tab: 'items' as const, icon: '☷', label: 'Browse'},
       {tab: 'graph' as const, icon: '⌘', label: 'Tree'},
       ...(hasMobs ? [{tab: 'mobs' as const, icon: '♟', label: 'Mobs'}] : []),
+      {tab: 'settings' as const, icon: '⚙', label: 'Settings'},
     ],
     [hasMobs],
   );
@@ -1184,6 +1271,7 @@ function MobileBottomNavigation({hasMobs}: {hasMobs: boolean}) {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.mobileNavigationSafeArea}>
+      <NativeUiScale>
       <View
         style={styles.mobileNavigation}
         onLayout={event => setNavigationWidth(event.nativeEvent.layout.width)}
@@ -1205,6 +1293,7 @@ function MobileBottomNavigation({hasMobs}: {hasMobs: boolean}) {
           <MobileTabBtn key={item.tab} {...item} />
         ))}
       </View>
+      </NativeUiScale>
     </SafeAreaView>
   );
 }
@@ -1409,7 +1498,8 @@ const styles = StyleSheet.create({
     shadowOffset: {width: 0, height: 10},
   },
   webInfoMenuPosition: {left: 0},
-  nativeInfoMenuPosition: {top: 48, right: 0},
+  nativeInfoMenuPosition: {top: 48},
+  nativeInfoMenuItem: {minHeight: 44},
   infoMenuItem: {
     minHeight: 38,
     flexDirection: 'row',
