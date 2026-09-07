@@ -1,0 +1,59 @@
+{
+  "format": "mrt-export-failure-file-v1",
+  "dedupeFingerprint": "14399dd027384a0eec779f86588760bc5bd2c5a312f6fce1349f2b24d9a0ce44",
+  "dedupeIdentity": {
+    "kind": "pack-version",
+    "packName": "LayeredExportSmokeTest",
+    "packVersion": "beta.28",
+    "minecraftVersion": "1.20.1"
+  },
+  "report": {
+    "format": "mrt-export-failure-report-v1",
+    "packName": "LayeredExportSmokeTest",
+    "packVersion": "beta.28",
+    "minecraftVersion": "1.20.1",
+    "exporterId": "jeiexport",
+    "exporterVersion": "1.2.0-beta.28",
+    "exporterBuild": null,
+    "generatedAt": "2026-08-03T23:10:29.277685Z",
+    "modVersions": {
+      "create": "6.0.8",
+      "minecraft": "1.20.1"
+    },
+    "failures": [
+      {
+        "scope": "export",
+        "modId": "create",
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "mob create:package rendered fully transparent and was omitted",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": "minecraft",
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": "java.util.NoSuchElementException",
+        "message": "blockdrops mekanism:personal_barrel: java.util.NoSuchElementException: minecraft:block_entity",
+        "details": "java.util.NoSuchElementException: minecraft:block_entity\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.world.level.storage.loot.LootParams.getParameter(LootParams.java:40)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.world.level.storage.loot.LootContext.getParam(LootContext.java:39)\n\tat TRANSFORMER/mekanism@10.4.16/mekanism.common.item.loot.PersonalStorageContentsLootFunction.apply(PersonalStorageContentsLootFunction.java:49)\n\tat TRANSFORMER/mekanism@10.4.16/mekanism.common.item.loot.PersonalStorageContentsLootFunction.apply(PersonalStorageContentsLootFunction.java:28)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.world.level.storage.loot.functions.LootItemFunctions.lambda$compose$2(LootItemFunctions.java:65)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.world.level.storage.loot.functions.LootItemFunction.lambda$decorate$0(LootItemFunction.java:14)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.world.level.storage.loot.entries.LootItem.createItemStack(LootItem.java:33)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.world.level.storage.loot.entries.LootPoolSingletonContainer$1.createItemStack(LootPoolSingletonContainer.java:59)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.world.level.storage.loot.LootPool.addRandomItem(LootPool.java:72)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.world.level.storage.loot.LootPool.addRandomItems(LootPool.java:94)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.world.level.storage.loot.LootTable.getRandomItemsRaw(LootTable.java:85)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.world.level.storage.loot.LootTable.getRandomItems(LootTable.java:117)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.world.level.storage.loot.LootTable.getRandomItems(LootTable.java:112)\n\tat TRANSFORMER/jeiexport@1.2.0-beta.28/com.recipetree.jeiexport.BlockDropsExporter.lambda$sampleOne$1(BlockDropsExporter.java:170)\n\tat TRANSFORMER/jeiexport@1.2.0-beta.28/com.recipetree.jeiexport.LootSampler.aggregate(LootSampler.java:49)\n\tat TRANSFORMER/jeiexport@1.2.0-beta.28/com.recipetree.jeiexport.BlockDropsExporter.sampleOne(BlockDropsExporter.java:169)\n\tat TRANSFORMER/jeiexport@1.2.0-beta.28/com.recipetree.jeiexport.BlockDropsExporter.lambda$step$0(BlockDropsExporter.java:101)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.util.thread.BlockableEventLoop.lambda$submitAsync$0(BlockableEventLoop.java:67)\n\tat java.base/java.util.concurrent.CompletableFuture$AsyncSupply.run(CompletableFuture.java:1768)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.server.TickTask.run(TickTask.java:18)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.util.thread.BlockableEventLoop.doRunTask(BlockableEventLoop.java:156)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.util.thread.ReentrantBlockableEventLoop.doRunTask(ReentrantBlockableEventLoop.java:23)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.server.MinecraftServer.doRunTask(MinecraftServer.java:770)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.server.MinecraftServer.doRunTask(MinecraftServer.java:161)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.util.thread.BlockableEventLoop.pollTask(BlockableEventLoop.java:130)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.server.MinecraftServer.pollTaskInternal(MinecraftServer.java:753)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.server.MinecraftServer.pollTask(MinecraftServer.java:747)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.util.thread.BlockableEventLoop.managedBlock(BlockableEventLoop.java:139)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.server.MinecraftServer.waitUntilNextTick(MinecraftServer.java:733)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.server.MinecraftServer.runServer(MinecraftServer.java:665)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.server.MinecraftServer.lambda$spin$2(MinecraftServer.java:251)\n\tat java.base/java.lang.Thread.run(Thread.java:840)"
+      },
+      {
+        "scope": "export",
+        "modId": "minecraft",
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": "java.util.NoSuchElementException",
+        "message": "blockdrops mekanism:personal_chest: java.util.NoSuchElementException: minecraft:block_entity",
+        "details": "java.util.NoSuchElementException: minecraft:block_entity\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.world.level.storage.loot.LootParams.getParameter(LootParams.java:40)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.world.level.storage.loot.LootContext.getParam(LootContext.java:39)\n\tat TRANSFORMER/mekanism@10.4.16/mekanism.common.item.loot.PersonalStorageContentsLootFunction.apply(PersonalStorageContentsLootFunction.java:49)\n\tat TRANSFORMER/mekanism@10.4.16/mekanism.common.item.loot.PersonalStorageContentsLootFunction.apply(PersonalStorageContentsLootFunction.java:28)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.world.level.storage.loot.functions.LootItemFunctions.lambda$compose$2(LootItemFunctions.java:65)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.world.level.storage.loot.functions.LootItemFunction.lambda$decorate$0(LootItemFunction.java:14)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.world.level.storage.loot.entries.LootItem.createItemStack(LootItem.java:33)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.world.level.storage.loot.entries.LootPoolSingletonContainer$1.createItemStack(LootPoolSingletonContainer.java:59)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.world.level.storage.loot.LootPool.addRandomItem(LootPool.java:72)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.world.level.storage.loot.LootPool.addRandomItems(LootPool.java:94)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.world.level.storage.loot.LootTable.getRandomItemsRaw(LootTable.java:85)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.world.level.storage.loot.LootTable.getRandomItems(LootTable.java:117)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.world.level.storage.loot.LootTable.getRandomItems(LootTable.java:112)\n\tat TRANSFORMER/jeiexport@1.2.0-beta.28/com.recipetree.jeiexport.BlockDropsExporter.lambda$sampleOne$1(BlockDropsExporter.java:170)\n\tat TRANSFORMER/jeiexport@1.2.0-beta.28/com.recipetree.jeiexport.LootSampler.aggregate(LootSampler.java:49)\n\tat TRANSFORMER/jeiexport@1.2.0-beta.28/com.recipetree.jeiexport.BlockDropsExporter.sampleOne(BlockDropsExporter.java:169)\n\tat TRANSFORMER/jeiexport@1.2.0-beta.28/com.recipetree.jeiexport.BlockDropsExporter.lambda$step$0(BlockDropsExporter.java:101)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.util.thread.BlockableEventLoop.lambda$submitAsync$0(BlockableEventLoop.java:67)\n\tat java.base/java.util.concurrent.CompletableFuture$AsyncSupply.run(CompletableFuture.java:1768)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.server.TickTask.run(TickTask.java:18)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.util.thread.BlockableEventLoop.doRunTask(BlockableEventLoop.java:156)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.util.thread.ReentrantBlockableEventLoop.doRunTask(ReentrantBlockableEventLoop.java:23)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.server.MinecraftServer.doRunTask(MinecraftServer.java:770)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.server.MinecraftServer.doRunTask(MinecraftServer.java:161)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.util.thread.BlockableEventLoop.pollTask(BlockableEventLoop.java:130)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.server.MinecraftServer.pollTaskInternal(MinecraftServer.java:753)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.server.MinecraftServer.pollTask(MinecraftServer.java:747)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.util.thread.BlockableEventLoop.managedBlock(BlockableEventLoop.java:139)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.server.MinecraftServer.waitUntilNextTick(MinecraftServer.java:733)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.server.MinecraftServer.runServer(MinecraftServer.java:665)\n\tat TRANSFORMER/minecraft@1.20.1/net.minecraft.server.MinecraftServer.lambda$spin$2(MinecraftServer.java:251)\n\tat java.base/java.lang.Thread.run(Thread.java:840)"
+      }
+    ]
+  }
+}
