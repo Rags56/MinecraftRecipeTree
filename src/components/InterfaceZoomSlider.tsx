@@ -2,7 +2,6 @@ import React, {useCallback, useMemo, useRef, useState} from 'react';
 import {
   PanResponder,
   Platform,
-  Pressable,
   StyleSheet,
   View,
 } from 'react-native';
@@ -158,7 +157,8 @@ function NativeInterfaceZoomSlider({
       : null;
 
   return (
-    <Pressable
+    <View
+      accessible
       {...panResponder.panHandlers}
       {...keyboardProps}
       accessibilityRole="adjustable"
@@ -189,7 +189,7 @@ function NativeInterfaceZoomSlider({
         pointerEvents="none"
         style={[styles.thumb, {left: Math.max(0, fraction * trackWidth - 8)}]}
       />
-    </Pressable>
+    </View>
   );
 }
 

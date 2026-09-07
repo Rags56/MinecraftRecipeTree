@@ -1,7 +1,7 @@
+import {Modal} from '../ui/nativeUiScale';
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,

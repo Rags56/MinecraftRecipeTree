@@ -1,7 +1,7 @@
+import {Modal} from '../ui/nativeUiScale';
 import React, {useEffect, useMemo, useState} from 'react';
 import {
   FlatList,
-  Modal,
   Pressable,
   StyleSheet,
   StyleProp,

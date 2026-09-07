@@ -126,7 +126,7 @@ export function DatasetSwitcher({
       </View>
     </TouchableOpacity>
   );
-  const expandButton = compact || nativeHeader ? (
+  const expandButton = compact && !nativeHeader ? (
     <TouchableOpacity
       style={[
         styles.expandButton,
@@ -196,24 +196,16 @@ export function DatasetSwitcher({
     <>
       <View style={[styles.bar, compact && styles.barCompact, nativeHeader && styles.barNative]}>
         {nativeHeader ? (
-          <View style={styles.nativeRows}>
+          <View
+            style={styles.nativeRows}
+            onPointerDown={event => event.stopPropagation()}
+            onTouchStart={event => event.stopPropagation()}>
             <View style={styles.nativePickerRow}>
               {datasetButton}
               {menuAction}
-              {expandButton}
               {trailingAction}
             </View>
-            {expanded && (
-              <View style={styles.nativeMenu} accessibilityRole="menu">
-                <View style={styles.nativeMenuActions}>
-                  {leadingAction}
-                  {details && <View style={styles.nativeMenuDetails}>{details}</View>}
-                  {loadedAttribution && (
-                    <DatasetDisclaimer attribution={loadedAttribution} variant="menu" />
-                  )}
-                </View>
-              </View>
-            )}
+
           </View>
         ) : compact ? (
           <View style={styles.compactRows}>
@@ -292,30 +284,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  nativeMenu: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
-    zIndex: 101,
-    elevation: 16,
-    marginTop: 7,
-    gap: 8,
-    padding: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.border,
-    backgroundColor: theme.panelAlt,
-    shadowColor: '#000',
-    shadowOpacity: 0.34,
-    shadowRadius: 18,
-    shadowOffset: {width: 0, height: 10},
-  },
-  nativeMenuActions: {
-    alignItems: 'stretch',
-    gap: 8,
-  },
-  nativeMenuDetails: {width: '100%', gap: 8},
   compactTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',

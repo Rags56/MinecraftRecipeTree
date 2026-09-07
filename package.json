@@ -102,7 +102,7 @@
     "db:generate": "drizzle-kit generate",
     "sample-data": "node scripts/make-sample-data.mjs",
     "ios:nemo": "expo run:ios --device Nemo --configuration Release",
-    "test:ios": "node --test src/native/packDownload.test.mjs src/account/authRedirect.test.mjs src/graph/recipeHistory.test.mjs src/graph/graphSession.test.mjs src/ui/deferredSurfaces.test.mjs"
+    "test:ios": "node --test src/native/packDownload.test.mjs src/account/authRedirect.test.mjs src/graph/recipeHistory.test.mjs src/graph/graphSession.test.mjs src/ui/deferredSurfaces.test.mjs src/ui/nativeScaling.test.mjs"
   },
   "private": true,
   "type": "module"

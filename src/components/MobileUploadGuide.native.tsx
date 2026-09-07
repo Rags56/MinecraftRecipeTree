@@ -1,9 +1,9 @@
+import {Modal} from '../ui/nativeUiScale';
 import * as DocumentPicker from 'expo-document-picker';
 import {File as NativeFile} from 'expo-file-system';
 import React, {useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
-  Modal,
   Platform,
   ScrollView,
   StyleSheet,
