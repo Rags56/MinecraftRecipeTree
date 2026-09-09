@@ -29,6 +29,33 @@ import {
 import {loadPublishedDatasetCatalogOnce} from './publishedDatasetCatalog';
 
 const PRODUCTION_ORIGIN = 'https://minecraftrecipetree.craftsmannsoftware.com';
+const CATALOG_CACHE_KEY = 'minecraft-recipe-tree-published-catalog-cache';
+
+/**
+ * Last-known catalog only, read synchronously so the very first render can skip the loading
+ * spinner instead of always showing it while the network request in the effect below resolves --
+ * that request still runs regardless and corrects anything stale. Native previously had no
+ * persistence for this at all (no localStorage), which is why every native launch showed
+ * "loading modpacks" even on a device that had already loaded the catalog before; now that
+ * nativeLocalStorage.native.ts polyfills it, this works the same way on both platforms.
+ */
+function readCachedCatalog(): readonly DatasetDescriptor[] {
+  try {
+    const raw = globalThis.localStorage?.getItem(CATALOG_CACHE_KEY);
+    if (!raw) return [];
+    return requireDatasetCatalog(JSON.parse(raw));
+  } catch {
+    return [];
+  }
+}
+
+function writeCachedCatalog(datasets: readonly DatasetDescriptor[]): void {
+  try {
+    globalThis.localStorage?.setItem(CATALOG_CACHE_KEY, JSON.stringify({datasets}));
+  } catch (error) {
+    console.error('The published dataset catalog cache could not be saved.', error);
+  }
+}
 
 interface DatasetRequestConfiguration {
   catalogUrl: string;
@@ -132,15 +159,30 @@ function errorMessage(error: unknown): string {
 const DatasetCatalogContext = createContext<DatasetCatalogContextValue | null>(null);
 
 export function DatasetCatalogProvider({children}: {children: React.ReactNode}) {
-  const [datasets, setDatasets] = useState<readonly DatasetDescriptor[]>([]);
-  const [selected, setSelected] = useState<DatasetDescriptor | null>(null);
-  const [assetOrigin, setAssetOrigin] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [datasets, setDatasets] = useState<readonly DatasetDescriptor[]>(readCachedCatalog);
+  const [selected, setSelected] = useState<DatasetDescriptor | null>(() => {
+    const cached = readCachedCatalog();
+    if (cached.length === 0) return null;
+    // The default channel only; currentWebRequestSlug() needs `window`, unavailable this early
+    // during a static prerender. The effect below corrects this to the real requested slug (if
+    // different) immediately after mount, the same way it already does on every catalog refresh.
+    try {
+      return selectDataset(cached, null);
+    } catch {
+      return null;
+    }
+  });
+  const [assetOrigin, setAssetOrigin] = useState(() => requestConfiguration().assetOrigin);
+  const [loading, setLoading] = useState(() => readCachedCatalog().length === 0);
   const [error, setError] = useState<string | null>(null);
   const [localCatalogRevision, setLocalCatalogRevision] = useState(0);
   const selectedSlugRef = useRef<string | null>(null);
   const localPublicationIdsRef = useRef(new Set<string>());
   const preferredLocalSlugRef = useRef<string | null>(null);
+  // Deliberately starts null (not seeded from the cache above): this ref is what makes the
+  // effect below skip its network fetch entirely when set, and the whole point here is that the
+  // effect still always fetches fresh data in the background even when the cache already let the
+  // first render skip the loading spinner.
   const publishedDatasetsRef = useRef<readonly DatasetDescriptor[] | null>(null);
 
   const sourceFor = useCallback(
@@ -206,6 +248,7 @@ export function DatasetCatalogProvider({children}: {children: React.ReactNode}) 
           setSelected(current => preserveDatasetMount(current, publishedSelection));
           setError(null);
           setLoading(false);
+          writeCachedCatalog(publishedDatasets);
         }
 
         let localDatasets: readonly DatasetDescriptor[] = [];
