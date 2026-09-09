@@ -544,10 +544,13 @@ function loadUseByproducts(): boolean {
 
 function loadExpandRecipesOnce(): boolean {
   try {
-    return globalThis.localStorage?.getItem(EXPAND_RECIPES_ONCE_KEY) === '1';
+    // Defaults on: absence of a stored preference means "never explicitly turned off", not
+    // "off". Native has no persistence for this at all yet, so this default is also the only
+    // thing that makes Unique mode "stick" there.
+    return globalThis.localStorage?.getItem(EXPAND_RECIPES_ONCE_KEY) !== '0';
   } catch (error) {
     console.error('Expand-once graph preference could not be loaded from localStorage.', error);
-    return false;
+    return true;
   }
 }
 
@@ -3699,7 +3702,11 @@ export function GraphScreen({
 
       <View style={[styles.controls, graphMenuScaleStyle]}>
         {showGraphControls && (
-          <View style={styles.controlOptions}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.controlOptionsScroller}
+            contentContainerStyle={styles.controlOptions}>
             {graphDirection === 'inputs' && (
               <CtrlBtn
                 label="Totals"
@@ -3782,7 +3789,7 @@ export function GraphScreen({
                 onPress={onClose}
               />
             )}
-          </View>
+          </ScrollView>
         )}
         <TouchableOpacity
           {...signalTarget('graph.control.menu')}
@@ -5911,12 +5918,19 @@ const styles = StyleSheet.create({
   },
   rootNodePrimaryActionText: {color: '#0b1610', fontSize: 9, fontWeight: '800'},
   controls: {
+    // Anchored as a genuine top bar spanning the available width, not just a top-right corner
+    // box -- the scrollable row below it needs room to actually stay a single row instead of
+    // wrapping into extra rows that a narrow portrait screen then clips.
     position: 'absolute',
     top: 10,
+    left: 10,
     right: 10,
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 6,
-    maxWidth: '96%',
+  },
+  controlOptionsScroller: {
+    flex: 1,
   },
   layoutFallbackNotice: {
     position: 'absolute',
@@ -5977,8 +5991,6 @@ const styles = StyleSheet.create({
   controlOptions: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-end',
     gap: 6,
   },
   uniqueModeNotice: {
