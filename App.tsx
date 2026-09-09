@@ -8,6 +8,7 @@ import {
   Linking,
   Modal,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -475,7 +476,9 @@ function Shell({
   const recipeStages = useRecipeStages();
   const account = useUser();
   const ui = useUi();
-  const {tab, setTab, graphRequestId} = ui;
+  const {tab, setTab, openGraphTrees, activeGraphTreeId} = ui;
+  const activeGraphTree = openGraphTrees.find(tree => tree.id === activeGraphTreeId) ?? null;
+  const graphTreeScrollRef = useRef<ScrollView>(null);
   const {width} = useWindowDimensions();
   const [hasHydrated, setHasHydrated] = useState(Platform.OS !== 'web');
   const compactHeader = hasHydrated && width < 720;
@@ -550,14 +553,31 @@ function Shell({
     modCount: Object.keys(data.manifest.mods ?? {}).length,
     activeTab: tab,
     openItemKey: ui.itemStack[ui.itemStack.length - 1] ?? '',
-    graphRootKey: ui.graphRootKey ?? '',
-    graphDirection: ui.graphDirection,
+    graphRootKey: activeGraphTree?.rootKey ?? '',
+    graphDirection: activeGraphTree?.direction ?? 'inputs',
+    openGraphTreeCount: openGraphTrees.length,
     interfaceZoomPercent: Math.round(interfaceZoom * 100),
     contentZoomPercent: Math.round(contentZoom * 100),
-  }), [contentZoom, data, interfaceZoom, tab, ui.graphDirection, ui.graphRootKey, ui.itemStack]);
+  }), [
+    activeGraphTree?.direction,
+    activeGraphTree?.rootKey,
+    contentZoom,
+    data,
+    interfaceZoom,
+    openGraphTrees.length,
+    tab,
+    ui.itemStack,
+  ]);
   useEffect(() => {
     if (Platform.OS === 'web') setHasHydrated(true);
   }, []);
+  useEffect(() => {
+    // Prepending a tree (balanced left placement) shifts every index, so this also has to fire
+    // whenever openGraphTrees itself changes, not only when the active id changes.
+    const index = openGraphTrees.findIndex(tree => tree.id === activeGraphTreeId);
+    if (index < 0) return;
+    graphTreeScrollRef.current?.scrollTo({x: index * width, animated: true});
+  }, [activeGraphTreeId, openGraphTrees, width]);
   useEffect(() => {
     if (tab === 'mobs') setHasVisitedMobs(true);
   }, [tab]);
@@ -565,19 +585,12 @@ function Shell({
     if (account.user) setShowSignIn(false);
   }, [account.user]);
   useEffect(() => {
-    if (recipeImportJob || ui.graphRootKey || ui.graphRecipeRef) return;
+    if (recipeImportJob || openGraphTrees.length > 0) return;
     const session = loadGraphSession(data.descriptor);
     if (!session) return;
     ui.restoreGraph(session.rootKey, session.direction);
     setTab('graph');
-  }, [
-    data.descriptor,
-    recipeImportJob,
-    setTab,
-    ui.graphRecipeRef,
-    ui.graphRootKey,
-    ui.restoreGraph,
-  ]);
+  }, [data.descriptor, openGraphTrees.length, recipeImportJob, setTab, ui.restoreGraph]);
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
     const url = new URL(window.location.href);
@@ -947,56 +960,83 @@ function Shell({
             importantForAccessibility={
               Platform.OS !== 'web' && tab !== 'graph' ? 'no-hide-descendants' : 'auto'
             }>
-            {data.indexStatus === 'ready' ? (
-              <GraphErrorBoundary
-                key={graphRequestId}
-                onRetry={recovery => {
-                  if (recovery.reloadPage && Platform.OS === 'web') {
-                    globalThis.location?.reload();
-                    return;
-                  }
-                  clearGraphSession(data.descriptor);
-                  if (ui.graphRootKey) {
-                    ui.restoreGraph(ui.graphRootKey, ui.graphDirection);
-                  } else {
-                    setTab('items');
-                  }
-                }}
-                onReturnToItems={() => setTab('items')}>
-                <Suspense
-                  fallback={
-                    <View style={styles.center}>
-                      <ActivityIndicator color={theme.accent} size="large" />
-                      <Text style={styles.loadingText}>loading graph workspace…</Text>
-                    </View>
-                  }>
-                  <LazyGraphScreen
-                    interfaceZoom={interfaceZoom}
-                    contentZoom={contentZoom}
-                    onContentZoomChange={previewContentZoom}
-                    onContentZoomComplete={saveContentZoom}
-                    showGraphControls={showGraphControls}
-                    onToggleGraphControls={() =>
-                      setShowGraphControls(value => !value)
-                    }
-                    recipeImportRequestId={recipeImportRequestId}
-                    onRecipeImportRequestHandled={() => setRecipeImportRequestId(0)}
-                    recipeImportJob={recipeImportJob}
-                    onRecipeImportStart={raw => {
-                      recipeImportJobIdRef.current += 1;
-                      setRecipeImportJob({
-                        id: recipeImportJobIdRef.current,
-                        raw,
-                      });
-                    }}
-                    onRecipeImportComplete={() => setRecipeImportJob(null)}
-                    recipeImportNotice={recipeImportNotice}
-                    onRecipeImportNoticeChange={setRecipeImportNotice}
-                    recipeImportReport={recipeImportReport}
-                    onRecipeImportReportChange={setRecipeImportReport}
-                  />
-                </Suspense>
-              </GraphErrorBoundary>
+            {data.indexStatus === 'ready' && openGraphTrees.length === 0 ? (
+              <View style={styles.center}>
+                <Text style={styles.loadingText}>
+                  Open an item's recipe to start a tree.
+                </Text>
+              </View>
+            ) : data.indexStatus === 'ready' ? (
+              <ScrollView
+                ref={graphTreeScrollRef}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                style={styles.graphTreeScroller}
+                onMomentumScrollEnd={event => {
+                  const index = Math.round(
+                    event.nativeEvent.contentOffset.x / Math.max(1, width),
+                  );
+                  const tree = openGraphTrees[index];
+                  if (tree) ui.setActiveGraphTree(tree.id);
+                }}>
+                {openGraphTrees.map(tree => (
+                  <View key={`${tree.id}-${tree.requestId}`} style={[styles.graphTreePage, {width}]}>
+                    <GraphErrorBoundary
+                      onRetry={recovery => {
+                        if (recovery.reloadPage && Platform.OS === 'web') {
+                          globalThis.location?.reload();
+                          return;
+                        }
+                        clearGraphSession(data.descriptor);
+                        ui.changeGraphDirection(tree.id, tree.direction);
+                      }}
+                      onReturnToItems={() => setTab('items')}>
+                      <Suspense
+                        fallback={
+                          <View style={styles.center}>
+                            <ActivityIndicator color={theme.accent} size="large" />
+                            <Text style={styles.loadingText}>loading graph workspace…</Text>
+                          </View>
+                        }>
+                        <LazyGraphScreen
+                          treeId={tree.id}
+                          rootKey={tree.rootKey}
+                          recipeRef={tree.recipeRef}
+                          direction={tree.direction}
+                          requestId={tree.requestId}
+                          isActive={tree.id === activeGraphTreeId}
+                          openTreeCount={openGraphTrees.length}
+                          onClose={() => ui.closeGraphTree(tree.id)}
+                          interfaceZoom={interfaceZoom}
+                          contentZoom={contentZoom}
+                          onContentZoomChange={previewContentZoom}
+                          onContentZoomComplete={saveContentZoom}
+                          showGraphControls={showGraphControls}
+                          onToggleGraphControls={() =>
+                            setShowGraphControls(value => !value)
+                          }
+                          recipeImportRequestId={recipeImportRequestId}
+                          onRecipeImportRequestHandled={() => setRecipeImportRequestId(0)}
+                          recipeImportJob={recipeImportJob}
+                          onRecipeImportStart={raw => {
+                            recipeImportJobIdRef.current += 1;
+                            setRecipeImportJob({
+                              id: recipeImportJobIdRef.current,
+                              raw,
+                            });
+                          }}
+                          onRecipeImportComplete={() => setRecipeImportJob(null)}
+                          recipeImportNotice={recipeImportNotice}
+                          onRecipeImportNoticeChange={setRecipeImportNotice}
+                          recipeImportReport={recipeImportReport}
+                          onRecipeImportReportChange={setRecipeImportReport}
+                        />
+                      </Suspense>
+                    </GraphErrorBoundary>
+                  </View>
+                ))}
+              </ScrollView>
             ) : (
               <View style={styles.center}>
                 {data.indexStatus !== 'error' && (
@@ -1265,6 +1305,8 @@ const styles = StyleSheet.create({
   datasetRoot: {flex: 1, minHeight: 0, backgroundColor: theme.bg},
   datasetContent: {flex: 1, minHeight: 0},
   center: {flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24},
+  graphTreeScroller: {flex: 1},
+  graphTreePage: {flex: 1},
   loadingText: {color: theme.textDim, marginTop: 14},
   deferredModalBackdrop: {
     flex: 1,

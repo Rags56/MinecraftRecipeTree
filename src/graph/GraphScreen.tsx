@@ -561,6 +561,14 @@ function nodeDepthBucket(
 }
 
 export function GraphScreen({
+  treeId,
+  rootKey: graphRootKey,
+  recipeRef: graphRecipeRef,
+  direction: graphDirection,
+  requestId: graphRequestId = 0,
+  isActive = true,
+  openTreeCount = 1,
+  onClose,
   interfaceZoom = 1,
   contentZoom = 1,
   onContentZoomChange,
@@ -577,6 +585,17 @@ export function GraphScreen({
   recipeImportReport = null,
   onRecipeImportReportChange,
 }: {
+  /** Stable id of this open tree; every other tree open alongside it has its own instance. */
+  treeId: number;
+  rootKey: string;
+  recipeRef: RecipeRef | null;
+  direction: GraphDirection;
+  /** Bumped by changeGraphDirection/retry to reset this tree's own transient UI state. */
+  requestId?: number;
+  /** Whether this is the currently focused tree among possibly several open side by side. */
+  isActive?: boolean;
+  openTreeCount?: number;
+  onClose?: () => void;
   interfaceZoom?: number;
   contentZoom?: number;
   onContentZoomChange?: (value: number) => void;
@@ -600,18 +619,18 @@ export function GraphScreen({
     toggleStage: toggleRecipeStage,
   } = useRecipeStages();
   const {
-    graphRootKey,
-    graphRequestId,
-    graphRecipeRef,
-    graphDirection,
-    changeGraphDirection,
     openRecipeInGraph,
     restoreGraph,
     openItem,
     tab,
     setTab,
     animateMobs,
+    changeGraphDirection: changeGraphDirectionForTree,
   } = useUi();
+  const changeGraphDirection = useCallback(
+    (direction: GraphDirection) => changeGraphDirectionForTree(treeId, direction),
+    [changeGraphDirectionForTree, treeId],
+  );
 
   const [root, setRoot] = useState<ItemTreeNode | null>(null);
   const rootRef = useRef<ItemTreeNode | null>(null);
@@ -3755,6 +3774,14 @@ export function GraphScreen({
               metricsId="graph.control.clear-all"
               onPress={clearAllExpansions}
             />
+            {onClose && openTreeCount > 1 && (
+              <CtrlBtn
+                label="Close tree"
+                accessibilityLabel="Close this recipe tree"
+                metricsId="graph.control.close-tree"
+                onPress={onClose}
+              />
+            )}
           </View>
         )}
         <TouchableOpacity
