@@ -26,3 +26,34 @@ export function itemIconRetryDelayMs(
   const jitter = Math.floor(random() * ITEM_ICON_RETRY_JITTER_MS);
   return ITEM_ICON_RETRY_BASE_DELAY_MS * 2 ** (attemptsMade - 1) + jitter;
 }
+
+/**
+ * A request that never answers is worse than one that fails: no error event ever fires, so the
+ * retry above never runs and the icon waits forever with nothing to show for it. Treating a
+ * silent load as a failure turns an unanswered image into the same bounded retry-then-fallback
+ * every other failure gets. Observed in production against packed-image coordinates whose pack
+ * hangs server-side rather than returning a status.
+ */
+export const ITEM_ICON_LOAD_TIMEOUT_MS = 10_000;
+
+/**
+ * Icons usually resolve fast enough that a spinner would only flash. Waiting before showing one
+ * keeps the common case still and reserves the spinner for loads slow enough that the user would
+ * otherwise be left guessing whether the icon is broken.
+ */
+export const ITEM_ICON_SPINNER_DELAY_MS = 400;
+
+/** The platform's smallest indicator is about this wide, and icons are frequently smaller. */
+const SMALL_ACTIVITY_INDICATOR_SIZE = 20;
+const MIN_ITEM_ICON_SPINNER_SCALE = 0.5;
+
+/** Fits the indicator inside the icon's own footprint so a 16px icon keeps its grid position. */
+export function itemIconSpinnerScale(size: number): number {
+  if (!Number.isFinite(size) || size <= 0) {
+    throw new Error(`Item icon spinner scale requires a positive size, got ${size}.`);
+  }
+  return Math.max(
+    MIN_ITEM_ICON_SPINNER_SCALE,
+    Math.min(1, size / SMALL_ACTIVITY_INDICATOR_SIZE),
+  );
+}
