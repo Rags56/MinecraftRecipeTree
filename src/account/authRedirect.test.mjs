@@ -53,6 +53,9 @@ test('account settings link non-donors to the donation page without showing conf
   assert.match(accountSource, /onPress=\{onOpenDonations\}/u);
   assert.doesNotMatch(accountSource, /Minecraft uses the Monocraft pixel font and block-style controls\./u);
   assert.doesNotMatch(accountSource, /setError\(cause instanceof Error \? cause\.message : 'Monthly donation tier could not be loaded\.'\)/u);
+  assert.match(accountSource, /setTierError\(cause instanceof Error \? cause\.message/u);
+  assert.match(accountSource, /tierError \? \(/u);
+  assert.match(accountSource, /onPress=\{refreshSubscription\}/u);
   assert.match(appSource, /onOpenDonations=\{\(\) => \{[\s\S]*?setShowAccount\(false\)[\s\S]*?setShowDonations\(true\)/u);
 });
 

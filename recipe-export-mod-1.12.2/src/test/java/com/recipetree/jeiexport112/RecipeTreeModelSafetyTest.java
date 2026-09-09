@@ -24,10 +24,119 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 public class RecipeTreeModelSafetyTest {
+    @Test
+    public void comparisonUsesAllThreeSidebarSummaryQuantities() throws Exception {
+        RecipeTreeViewerBridge.Ingredient root = ingredient("item|example:root", 1);
+        RecipeTreeViewerBridge.Ingredient input = ingredient("item|example:input", 3);
+        RecipeTreeViewerBridge.Ingredient extra = ingredient("item|example:extra", 2);
+        RecipeTreeModel model = model(root, 1);
+        assertTrue(model.setRecipe(model.getPrimaryRoot(), recipe("comparison",
+                Collections.singletonList(slot(input)), Arrays.asList(slot(root), slot(extra))), false));
+        RecipeTreeModel.Summary a = model.summarize(false);
+        model.setPrimaryAmount(4);
+        RecipeTreeModel.Summary b = model.summarize(false);
+        assertAmount("3", RecipeTreeComparison.differences(
+                RecipeTreeComparison.types(a), RecipeTreeComparison.types(b)).get(0).change);
+        assertAmount("9", RecipeTreeComparison.differences(
+                RecipeTreeComparison.items(a.materials), RecipeTreeComparison.items(b.materials)).get(0).change);
+        assertAmount("6", RecipeTreeComparison.differences(
+                RecipeTreeComparison.items(a.byproducts), RecipeTreeComparison.items(b.byproducts)).get(0).change);
+    }
+
+    @Test(expected = IllegalStateException.class)
+    @SuppressWarnings("unchecked")
+    public void comparisonRejectsMissingSavedNodesInsteadOfShowingPartialTotals() throws Exception {
+        RecipeTreeViewerBridge bridge = bridge();
+        RecipeTreeViewerBridge.Ingredient root = ingredient("item|example:root", 1);
+        java.lang.reflect.Field field = RecipeTreeViewerBridge.class.getDeclaredField("ingredientsByKey");
+        field.setAccessible(true);
+        ((java.util.Map<String, RecipeTreeViewerBridge.Ingredient>) field.get(bridge)).put(root.getKey(), root);
+        RecipeTreeProgress.RecipeHistoryEntry entry = new RecipeTreeProgress.RecipeHistoryEntry(
+                root.getKey(), null, 1, false, 1, null,
+                Collections.singletonList(new RecipeTreeProgress.RecipeHistorySelection(
+                        0, Collections.singletonList(0), "missing-child", "Missing child", null, null)), false);
+        RecipeTreeModel.restoreForComparison(bridge, entry);
+    }
+
+    @Test
+    public void aspectSourceYieldDividesDemandInsteadOfMultiplyingIt() throws Exception {
+        RecipeTreeViewerBridge.Ingredient source = ingredient("item|example:opal_block", 27);
+        RecipeTreeViewerBridge.Ingredient aspect = ingredient("aspect|luna", 1);
+        RecipeTreeViewerBridge.Recipe page = RecipeTreeViewerBridge.Recipe.aspectSourcePage(
+                "aspect-page", RecipeTreeViewerBridge.THAUMIC_ASPECT_SOURCE_CATEGORY_UID,
+                "Aspect from ItemStack", null, Collections.singletonList(slot(source)),
+                Collections.singletonList(slot(aspect)), 220, 140, null, null, null,
+                Collections.singletonList(source),
+                Collections.<String, List<RecipeTreeViewerBridge.Ingredient>>emptyMap());
+        RecipeTreeViewerBridge.Recipe selected = page.selectAspectSource(source);
+        RecipeTreeViewerBridge.Ingredient masterSpell = ingredient("item|example:master_spell", 1);
+        RecipeTreeModel model = model(masterSpell, 1);
+        assertTrue(model.setRecipe(
+                model.getPrimaryRoot(),
+                recipe("master-spell", Collections.singletonList(slot(
+                                ingredient("aspect|luna", 4096))),
+                        Collections.singletonList(slot(masterSpell))),
+                false));
+        RecipeTreeModel.Node aspectNode = model.getPrimaryRoot().getChildren().get(0);
+
+        assertTrue(model.setRecipe(aspectNode, selected, false));
+
+        assertAmount("4096", aspectNode.getDemand());
+        assertAmount("27", aspectNode.getOutputPerCraft());
+        assertAmount("152", aspectNode.crafts());
+        assertEquals(1, aspectNode.getChildren().size());
+        assertAmount("152", aspectNode.getChildren().get(0).getDemand());
+    }
+
+    @Test
+    public void clearingAnIngredientClearsEveryMatchingNodeAndItsFavorite() throws Exception {
+        RecipeTreeViewerBridge.Ingredient item = ingredient("item|example:shared", 1);
+        RecipeTreeViewerBridge.Ingredient firstInput = ingredient("item|example:first", 2);
+        RecipeTreeViewerBridge.Ingredient secondInput = ingredient("item|example:second", 3);
+        RecipeTreeViewerBridge.Ingredient unrelated = ingredient("item|example:unrelated", 1);
+        RecipeTreeViewerBridge.Ingredient unrelatedInput = ingredient("item|example:kept", 4);
+        RecipeTreeViewerBridge.Recipe firstRecipe = recipe(
+                "first-recipe",
+                Collections.singletonList(slot(firstInput)),
+                Collections.singletonList(slot(item)));
+        RecipeTreeViewerBridge.Recipe secondRecipe = recipe(
+                "second-recipe",
+                Collections.singletonList(slot(secondInput)),
+                Collections.singletonList(slot(item)));
+        RecipeTreeViewerBridge.Recipe unrelatedRecipe = recipe(
+                "unrelated-recipe",
+                Collections.singletonList(slot(unrelatedInput)),
+                Collections.singletonList(slot(unrelated)));
+        RecipeTreeProgress progress = progress();
+        RecipeTreeModel model = new RecipeTreeModel(bridge(), progress, item, 1);
+        assertTrue(model.addRoot(item, 1));
+        assertTrue(model.addRoot(unrelated, 1));
+        RecipeTreeModel.Node cleared = model.getRoots().get(0);
+        RecipeTreeModel.Node alsoCleared = model.getRoots().get(1);
+        RecipeTreeModel.Node untouched = model.getRoots().get(2);
+        assertTrue(model.setRecipe(cleared, firstRecipe, false));
+        assertTrue(model.setRecipe(alsoCleared, secondRecipe, false));
+        assertTrue(model.setRecipe(untouched, unrelatedRecipe, false));
+        progress.saveFavoriteRecipe(item.getKey(), firstRecipe.getKey());
+
+        model.clearRecipesForIngredient(cleared, true);
+
+        assertNull(cleared.getRecipe());
+        assertTrue(cleared.getChildren().isEmpty());
+        assertNull(alsoCleared.getRecipe());
+        assertTrue(alsoCleared.getChildren().isEmpty());
+        assertSame(unrelatedRecipe, untouched.getRecipe());
+        assertEquals(1, untouched.getChildren().size());
+        assertEquals(unrelatedInput.getKey(),
+                untouched.getChildren().get(0).getIngredient().getKey());
+        assertNull(progress.favoriteRecipe(item.getKey()));
+    }
+
     @Test
     public void largeTreeSummaryIsReusedUntilTheModelChanges() throws Exception {
         RecipeTreeViewerBridge.Ingredient root = ingredient("item|example:summary_root", 1);

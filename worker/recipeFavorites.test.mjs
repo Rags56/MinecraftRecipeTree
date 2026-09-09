@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
+import {readFileSync} from 'node:fs';
+import {DatabaseSync} from 'node:sqlite';
 import test from 'node:test';
 import {
   TEST_ORIGIN as ORIGIN,
@@ -106,6 +108,39 @@ function cleanupRequest(favorites, authorization = authentication.authorization)
 }
 
 test.after(() => authentication.restoreFetch());
+
+test('anonymous favorite claim and cleanup use the client hash index', () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec(`CREATE TABLE recipe_favorites (
+    pack_slug TEXT NOT NULL,
+    publication_id TEXT NOT NULL,
+    item_key TEXT NOT NULL,
+    client_hash TEXT NOT NULL,
+    recipe_category INTEGER NOT NULL,
+    recipe_index INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`);
+  db.exec(readFileSync(new URL('../drizzle/0010_slim_invisible_woman.sql', import.meta.url), 'utf8'));
+
+  const claimPlan = db
+    .prepare('EXPLAIN QUERY PLAN SELECT * FROM recipe_favorites WHERE client_hash = ?')
+    .all('probe');
+  const cleanupPlan = db
+    .prepare('EXPLAIN QUERY PLAN DELETE FROM recipe_favorites WHERE client_hash = ?')
+    .all('probe');
+
+  for (const plan of [claimPlan, cleanupPlan]) {
+    assert.ok(
+      plan.some(row => String(row.detail).includes('USING INDEX recipe_favorites_client_hash_idx')),
+      `expected client hash index in query plan: ${JSON.stringify(plan)}`,
+    );
+    assert.ok(
+      plan.every(row => !String(row.detail).startsWith('SCAN recipe_favorites')),
+      `unexpected full-table scan in query plan: ${JSON.stringify(plan)}`,
+    );
+  }
+  db.close();
+});
 
 test('returns the highest-count recipe for each item and requires at least one favorite', async () => {
   const DB = database([

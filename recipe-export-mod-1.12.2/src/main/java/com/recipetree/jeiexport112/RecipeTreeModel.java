@@ -115,7 +115,9 @@ final class RecipeTreeModel {
         if (ingredient == null || recipeKey == null) return null;
         for (RecipeTreeViewerBridge.Recipe recipe :
                 flattenedRecipes(ingredient, IFocus.Mode.OUTPUT)) {
-            if (recipeKey.equals(recipe.getKey())) return recipe;
+            if (!recipe.isAspectSourcePage() && recipeKey.equals(recipe.getKey())) return recipe;
+            RecipeTreeViewerBridge.Recipe selected = recipe.resolveAspectSource(recipeKey);
+            if (selected != null) return selected;
         }
         return null;
     }
@@ -164,12 +166,26 @@ final class RecipeTreeModel {
 
     void clearRecipe(Node node, boolean clearFavorite) {
         if (node == null) return;
+        clearRecipeSelection(node);
+        invalidateSummary();
+        if (clearFavorite) progress.clearFavoriteRecipe(node.ingredient.getKey());
+    }
+
+    void clearRecipesForIngredient(Node node, boolean clearFavorite) {
+        if (node == null) return;
+        String ingredientKey = node.ingredient.getKey();
+        List<Node> matches = new ArrayList<Node>();
+        for (Node root : roots) collectMatching(root, ingredientKey, matches);
+        for (Node match : matches) clearRecipeSelection(match);
+        invalidateSummary();
+        if (clearFavorite) progress.clearFavoriteRecipe(ingredientKey);
+    }
+
+    private static void clearRecipeSelection(Node node) {
         node.recipe = null;
         node.outputPerCraft = BigDecimal.ONE;
         node.children.clear();
         node.truncatedDemands.clear();
-        invalidateSummary();
-        if (clearFavorite) progress.clearFavoriteRecipe(node.ingredient.getKey());
     }
 
     void applyFavoriteEverywhere(String ingredientKey, String recipeKey) {
@@ -311,6 +327,18 @@ final class RecipeTreeModel {
             RecipeTreeViewerBridge bridge,
             RecipeTreeProgress progress,
             RecipeTreeProgress.RecipeHistoryEntry entry) {
+        return restore(bridge, progress, entry, false);
+    }
+
+    static RecipeTreeModel restoreForComparison(RecipeTreeViewerBridge bridge,
+            RecipeTreeProgress.RecipeHistoryEntry entry) {
+        // Comparison uses saved flags, never today's favorites or reusable settings.
+        // Strict restoration below applies those flags directly without writing progress.
+        return restore(bridge, new RecipeTreeProgress(null, null, false), entry, true);
+    }
+
+    private static RecipeTreeModel restore(RecipeTreeViewerBridge bridge,
+            RecipeTreeProgress progress, RecipeTreeProgress.RecipeHistoryEntry entry, boolean strict) {
         if (entry == null || entry.getItemIdentity() == null) return null;
         RecipeTreeViewerBridge.Ingredient primary = bridge.findIngredient(entry.getItemIdentity());
         if (primary == null) {
@@ -324,6 +352,7 @@ final class RecipeTreeModel {
         model.roots.clear();
         for (RecipeTreeProgress.RecipeHistoryRoot savedRoot : entry.getRoots()) {
             if (model.roots.size() >= MAX_ROOTS) {
+                if (strict) throw new IllegalStateException("Saved tree exceeds the root limit");
                 JeiExportMod.LOGGER.warn(
                         "[jeiexport] Saved recipe tree contains more than {} roots; ignoring {} "
                                 + "remaining roots rather than exceeding the documented limit",
@@ -333,6 +362,7 @@ final class RecipeTreeModel {
             RecipeTreeViewerBridge.Ingredient ingredient =
                     bridge.findIngredient(savedRoot.getIngredientIdentity());
             if (ingredient == null) {
+                if (strict) throw new IllegalStateException("Missing saved root: " + savedRoot.getIngredientName());
                 JeiExportMod.LOGGER.warn(
                         "[jeiexport] Skipping unresolved saved recipe-tree root {}",
                         savedRoot.getIngredientIdentity());
@@ -353,20 +383,33 @@ final class RecipeTreeModel {
         }
         for (RecipeTreeProgress.RecipeHistorySelection selection : entry.getSelections()) {
             Node node = model.nodeAt(selection.getRootIndex(), selection.getPath());
-            if (node == null) continue;
+            if (node == null) {
+                if (strict) throw new IllegalStateException("Missing saved node: " + selection.getIngredientName());
+                continue;
+            }
             int alternative = node.alternativeIndex(selection.getIngredientIdentity());
             if (alternative >= 0) model.selectAlternative(node, alternative, false);
-            if (!node.ingredient.getKey().equals(selection.getIngredientIdentity())) continue;
+            if (!node.ingredient.getKey().equals(selection.getIngredientIdentity())) {
+                if (strict) throw new IllegalStateException("Saved ingredient changed: " + selection.getIngredientName());
+                continue;
+            }
+            if (strict) {
+                node.manualReusableInput = node.parent != null && selection.isReusableInput();
+                node.refreshDemandFromParent();
+            }
             if (selection.getRecipeIdentity() == null) {
                 model.clearRecipe(node, false);
-                if (selection.isReusableInput()) model.setReusableInput(node, true);
+                if (!strict && selection.isReusableInput()) model.setReusableInput(node, true);
                 continue;
             }
             RecipeTreeViewerBridge.Recipe recipe =
                     model.recipeByKey(node.ingredient, selection.getRecipeIdentity());
             if (recipe != null) {
-                model.setRecipeForRestore(node, recipe);
-                if (selection.isReusableInput()) model.setReusableInput(node, true);
+                boolean applied = model.setRecipeForRestore(node, recipe);
+                if (strict && !applied) throw new IllegalStateException("Cannot restore recipe: " + selection.getIngredientName());
+                if (!strict && selection.isReusableInput()) model.setReusableInput(node, true);
+            } else if (strict) {
+                throw new IllegalStateException("Recipe unavailable: " + selection.getIngredientName());
             }
         }
         return model;

@@ -19,6 +19,8 @@ export const DATASET_CHANNEL_DELETION_ROUTE =
 const EXPECTED_PUBLICATION_HEADER = 'x-mrt-expected-dataset-publication-id';
 const EXPECTED_PREVIEW_HEADER = 'x-mrt-expected-preview-asset-set-id';
 const UNSAFE_IDENTITY_TEXT_PATTERN = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/u;
+export const DATASET_CATALOG_EDGE_TTL_SECONDS = 60;
+let catalogCacheUnavailableReported = false;
 
 const createPublicationsTableSql = `
   CREATE TABLE IF NOT EXISTS dataset_publications (
@@ -135,55 +137,73 @@ function descriptorFromRow(row: DatasetChannelRow): DatasetDescriptor {
   };
 }
 
-/**
- * A fixed, query-string-free key so every request for the catalog reads/writes the same edge
- * cache entry, regardless of the caller's own URL (host aside).
- */
+/** A fixed, query-string-free key for this hostname's edge-local catalog entry. */
 function catalogCacheKey(request: Request): Request {
   return new Request(new URL('/api/datasets', request.url).toString(), {method: 'GET'});
 }
 
-function secondsUntilNextUtcMidnight(now: Date = new Date()): number {
-  const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0);
-  return Math.max(1, Math.ceil((next - now.getTime()) / 1000));
-}
-
-/**
- * scripts/publication-upload-preflight.mjs and scripts/dataset-channel-admin.mjs need a
- * guaranteed-fresh D1 read: the edge cache is per-data-center, so a purge on activation/deletion
- * only ever clears the data center that handled the mutation, and these scripts cannot assume
- * their verification request lands on that same one. They send this to always bypass the cache
- * rather than race it within their (sub-2-second) retry budget.
- */
-function bypassesCatalogCache(request: Request): boolean {
-  const directive = (request.headers.get('cache-control') ?? '').toLowerCase();
-  return directive.includes('no-store') || directive.includes('no-cache');
-}
-
-/** The Cache API is a best-effort optimization; any failure here must fall through to D1. */
-async function matchCatalogCache(cacheKey: Request): Promise<Response | null> {
+function defaultCatalogCache(context: string): Cache | null {
   try {
-    return (await caches.default.match(cacheKey)) ?? null;
+    const cache = caches.default;
+    catalogCacheUnavailableReported = false;
+    return cache;
   } catch (error) {
-    console.warn('Dataset catalog cache read failed; reading D1 directly.', error);
+    if (!catalogCacheUnavailableReported) {
+      catalogCacheUnavailableReported = true;
+      console.warn('Dataset catalog edge cache is unavailable; continuing against D1.', {
+        context,
+        error,
+      });
+    }
     return null;
   }
 }
 
-async function putCatalogCache(cacheKey: Request, cacheableResponse: Response): Promise<void> {
+async function invalidateCatalogCache(request: Request, context: string): Promise<void> {
+  const cache = defaultCatalogCache(context);
+  if (!cache) return;
   try {
-    await caches.default.put(cacheKey, cacheableResponse);
+    await cache.delete(catalogCacheKey(request));
   } catch (error) {
-    console.warn('Dataset catalog cache write failed; the D1 response was still served.', error);
+    console.warn(
+      'Could not invalidate the local dataset catalog edge entry; other entries remain bounded by the configured TTL.',
+      {context, ttlSeconds: DATASET_CATALOG_EDGE_TTL_SECONDS, error},
+    );
   }
 }
 
-/** Best-effort: a failed cache purge must never fail the mutation that already committed to D1. */
-async function invalidateCatalogCache(request: Request, context: string): Promise<void> {
+async function readCachedCatalog(request: Request, cache: Cache | null): Promise<Response | null> {
+  if (!cache) return null;
   try {
-    await caches.default.delete(catalogCacheKey(request));
+    const cached = await cache.match(catalogCacheKey(request));
+    if (!cached) return null;
+    const headers = new Headers(cached.headers);
+    headers.set('Cache-Control', 'no-store');
+    return new Response(cached.body, {
+      status: cached.status,
+      statusText: cached.statusText,
+      headers,
+    });
   } catch (error) {
-    console.warn('Could not invalidate the cached dataset catalog.', {context, error});
+    console.warn('Dataset catalog edge-cache lookup failed; continuing against D1.', {error});
+    return null;
+  }
+}
+
+async function cacheCatalog(request: Request, body: string, cache: Cache | null): Promise<void> {
+  if (!cache) return;
+  const cachedResponse = new Response(body, {
+    status: 200,
+    headers: {
+      'Cache-Control': `public, max-age=${DATASET_CATALOG_EDGE_TTL_SECONDS}`,
+      'Content-Type': 'application/json; charset=utf-8',
+      'X-Content-Type-Options': 'nosniff',
+    },
+  });
+  try {
+    await cache.put(catalogCacheKey(request), cachedResponse);
+  } catch (error) {
+    console.warn('Dataset catalog edge-cache fill failed; returning the fresh D1 result.', {error});
   }
 }
 
@@ -192,11 +212,9 @@ export async function handleDatasetCatalog(
   runtime: DatasetRuntime,
 ): Promise<Response> {
   if (request.method !== 'GET') return methodNotAllowed('GET');
-  const cacheKey = catalogCacheKey(request);
-  if (!bypassesCatalogCache(request)) {
-    const cached = await matchCatalogCache(cacheKey);
-    if (cached) return cached;
-  }
+  const cache = defaultCatalogCache('catalog request');
+  const cached = await readCachedCatalog(request, cache);
+  if (cached) return cached;
   const db = runtime.DB;
   if (!db) {
     console.error('Dataset catalog cannot read because the DB binding is unavailable.');
@@ -223,22 +241,19 @@ export async function handleDatasetCatalog(
       });
       return noStoreJson({error: 'Dataset catalog is not configured.'}, 503);
     }
-    // Every caller always gets Cache-Control: no-store on the response it actually receives --
-    // the publish preflight and post-activation verification scripts require that literal
-    // directive, and this must stay true whether the read came from D1 or the edge cache. The
-    // day-long max-age below governs only the internal edge cache entry, which no caller ever
-    // sees directly.
+    // Cache API entries are edge-local, so mutations eagerly clear their local entry while this
+    // short TTL bounds visibility elsewhere. Callers always receive no-store because publishing
+    // and channel-verification clients must independently observe the public Worker response.
     const body = `${JSON.stringify({datasets})}\n`;
-    const cacheableResponse = new Response(body, {
+    await cacheCatalog(request, body, cache);
+    return new Response(body, {
       status: 200,
       headers: {
-        'Cache-Control': `public, max-age=${secondsUntilNextUtcMidnight()}`,
+        'Cache-Control': 'no-store',
         'Content-Type': 'application/json; charset=utf-8',
         'X-Content-Type-Options': 'nosniff',
       },
     });
-    await putCatalogCache(cacheKey, cacheableResponse);
-    return noStoreJson({datasets});
   } catch (error) {
     console.error('Dataset catalog query failed.', error);
     return noStoreJson({error: 'Dataset catalog is unavailable.'}, 503);

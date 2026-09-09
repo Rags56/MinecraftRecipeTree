@@ -106,6 +106,7 @@ export const recipeFavorites = sqliteTable(
       table.recipeCategory,
       table.recipeIndex,
     ),
+    index('recipe_favorites_client_hash_idx').on(table.clientHash),
   ],
 );
 

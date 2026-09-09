@@ -92,6 +92,44 @@ public class RecipeTreeViewerBridgeTest {
     }
 
     @Test
+    public void thaumicCrucibleCatalystStacksBecomeOneAlternativeSlot() {
+        RecipeTreeViewerBridge.Ingredient quartz = testItemIngredient("item|example:quartz");
+        RecipeTreeViewerBridge.Ingredient quartzNugget =
+                testItemIngredient("item|example:quartz_nugget");
+        RecipeTreeViewerBridge.Ingredient quartzSliver =
+                testItemIngredient("item|example:quartz_sliver");
+        RecipeTreeViewerBridge.Ingredient luna = testIngredient("aspect|luna");
+        List<RecipeTreeViewerBridge.Slot> inputs = Arrays.asList(
+                new RecipeTreeViewerBridge.Slot(Collections.singletonList(quartz)),
+                new RecipeTreeViewerBridge.Slot(Collections.singletonList(quartzNugget)),
+                new RecipeTreeViewerBridge.Slot(Collections.singletonList(quartzSliver)),
+                new RecipeTreeViewerBridge.Slot(Collections.singletonList(luna)));
+
+        List<RecipeTreeViewerBridge.Slot> normalized =
+                RecipeTreeViewerBridge.normalizeThaumicCrucibleInputs(
+                        RecipeTreeViewerBridge.THAUMIC_CRUCIBLE_CATEGORY_UID,
+                        "com.buuz135.thaumicjei.category.CrucibleCategory$CrucibleWrapper",
+                        inputs);
+
+        assertEquals(2, normalized.size());
+        assertEquals(Arrays.asList(quartz, quartzNugget, quartzSliver),
+                normalized.get(0).getAlternatives());
+        assertEquals(Collections.singletonList(luna), normalized.get(1).getAlternatives());
+    }
+
+    @Test
+    public void nonCrucibleRecipesKeepSeparateItemSlots() {
+        List<RecipeTreeViewerBridge.Slot> inputs = Arrays.asList(
+                new RecipeTreeViewerBridge.Slot(Collections.singletonList(
+                        testItemIngredient("item|example:first"))),
+                new RecipeTreeViewerBridge.Slot(Collections.singletonList(
+                        testItemIngredient("item|example:second"))));
+
+        assertSame(inputs, RecipeTreeViewerBridge.normalizeThaumicCrucibleInputs(
+                "minecraft.crafting", "example.CraftingWrapper", inputs));
+    }
+
+    @Test
     public void metadataCategoriesAreFilteredWithoutHidingRecipes() {
         assertTrue(RecipeTreeViewerBridge.isMetaCategory("jei.information"));
         assertTrue(RecipeTreeViewerBridge.isMetaCategory("jei:information"));
@@ -371,6 +409,11 @@ public class RecipeTreeViewerBridgeTest {
 
     private static RecipeTreeViewerBridge.Ingredient testIngredient(String key) {
         return new RecipeTreeViewerBridge.Ingredient(null, key, key, key, BigDecimal.ONE);
+    }
+
+    private static RecipeTreeViewerBridge.Ingredient testItemIngredient(String key) {
+        return new RecipeTreeViewerBridge.Ingredient(
+                VanillaTypes.ITEM, key, key, key, BigDecimal.ONE);
     }
 
     private static RecipeTreeViewerBridge bridge(final IRecipeRegistry recipes,

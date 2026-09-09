@@ -40,6 +40,36 @@ test('a root production target scales every downstream ingredient by recipe yiel
   assert.equal(totals.inputs[0].amount, 39);
 });
 
+test('singleton ingredients sharing an OreDictionary tag remain exact totals', () => {
+  const taggedFood = (id, key) =>
+    item(id, key, 1, {
+      tag: 'ore:listAllFood',
+      alternatives: [key],
+      variantCount: 1,
+    });
+  const root = item('root', 'item|avaritia:ultimate_stew', 16, {
+    source: {
+      id: 'root.s',
+      kind: 'recipe',
+      recipe: {out: [[['item|avaritia:ultimate_stew', 16]]]},
+      inputs: [
+        taggedFood('root.s.0', 'item|test:intense_meatball_pasta'),
+        taggedFood('root.s.1', 'item|test:burned_enchanted_feather'),
+        taggedFood('root.s.2', 'item|test:intense_meatball_pasta'),
+        taggedFood('root.s.3', 'item|test:nice_clean_salad'),
+      ],
+    },
+  });
+
+  const totals = calculateTreeTotals(root);
+  const inputs = new Map(totals.inputs.map(total => [total.key, total.amount]));
+  assert.deepEqual(inputs, new Map([
+    ['item|test:intense_meatball_pasta', 2],
+    ['item|test:burned_enchanted_feather', 1],
+    ['item|test:nice_clean_salad', 1],
+  ]));
+});
+
 test('fluid output requirements pay for complete recipe cycles', () => {
   const root = item('root', 'fluid|contenttweaker:protodermis', 10_000, {
     productionPlan: {amount: 1, windowSeconds: 1},

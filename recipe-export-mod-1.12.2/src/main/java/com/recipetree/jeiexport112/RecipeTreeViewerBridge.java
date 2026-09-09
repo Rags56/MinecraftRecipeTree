@@ -15,6 +15,7 @@ import mezz.jei.api.recipe.IRecipeWrapper;
 import mezz.jei.api.recipe.wrapper.ICraftingRecipeWrapper;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Gui;
+import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.util.ITooltipFlag;
 import net.minecraft.enchantment.EnchantmentData;
 import net.minecraft.block.Block;
@@ -24,6 +25,8 @@ import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fml.common.registry.ForgeRegistries;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -61,6 +64,16 @@ public final class RecipeTreeViewerBridge {
     static final String EMC_CATEGORY_TITLE = "EMC Transmutation";
     static final int EMC_RECIPE_WIDTH = 86;
     static final int EMC_RECIPE_HEIGHT = 78;
+    static final String THAUMIC_ASPECT_SOURCE_CATEGORY_UID =
+            "THAUMCRAFT_ASPECT_FROM_ITEMSTACK";
+    static final int THAUMIC_ASPECT_SOURCE_RECIPE_WIDTH = 78;
+    static final int THAUMIC_ASPECT_SOURCE_RECIPE_HEIGHT = 38;
+    private static final String THAUMIC_ASPECT_SOURCE_WRAPPER =
+            "com.buuz135.thaumicjei.category.AspectFromItemStackCategory$" +
+                    "AspectFromItemStackWrapper";
+    static final String THAUMIC_CRUCIBLE_CATEGORY_UID = "THAUMCRAFT_CRUCIBLE";
+    private static final String THAUMIC_CRUCIBLE_WRAPPER =
+            "com.buuz135.thaumicjei.category.CrucibleCategory$CrucibleWrapper";
     private static final String THERMAL_TRANSPOSER_CONTAINER_WRAPPER =
             "cofh.thermalexpansion.plugins.jei.machine.transposer." +
                     "TransposerRecipeWrapperContainer";
@@ -74,6 +87,7 @@ public final class RecipeTreeViewerBridge {
 
     private final IIngredientRegistry ingredientRegistry;
     private final IRecipeRegistry recipeRegistry;
+    private final Object recipesGui;
     private final ProjectEEmcSupport emcSupport;
     private final Ingredient emcCatalyst;
     private final Map<String, Ingredient> ingredientsByKey =
@@ -124,6 +138,7 @@ public final class RecipeTreeViewerBridge {
         }
         this.ingredientRegistry = ingredientRegistry;
         this.recipeRegistry = registry;
+        this.recipesGui = runtime.getRecipesGui();
         ProjectEEmcSupport loadedEmc = null;
         Ingredient loadedCatalyst = null;
         if (ProjectEEmcSupport.isAvailable()) {
@@ -321,11 +336,18 @@ public final class RecipeTreeViewerBridge {
                     RecordingIngredients recording = new RecordingIngredients(ingredientRegistry);
                     wrapper.getIngredients(recording);
                     String wrapperClass = wrapper.getClass().getName();
-                    List<Slot> inputs = normalizeBrewingInputs(
-                            wrapperClass, slots(recording.allInputs()));
+                    List<Slot> inputs = normalizeThaumicCrucibleInputs(
+                            categoryUid, wrapperClass, normalizeBrewingInputs(
+                                    wrapperClass, slots(recording.allInputs())));
                     List<Slot> outputs = slots(recording.allOutputs());
                     if (outputs.isEmpty()) {
                         throw new IllegalArgumentException("recipe has no semantic output slots");
+                    }
+                    if (THAUMIC_ASPECT_SOURCE_CATEGORY_UID.equals(categoryUid)) {
+                        recipes.add(aspectSourcePage(categoryUid, categoryTitle, catalyst,
+                                wrapperClass, inputs, outputs, dimensions, category, wrapper,
+                                focus));
+                        continue;
                     }
                     CorrelatedSlots correlated = correlateAlternatives(
                             wrapperClass, focusIngredient.key, inputs, outputs);
@@ -372,6 +394,135 @@ public final class RecipeTreeViewerBridge {
             }
         }
         return result;
+    }
+
+    private Recipe aspectSourcePage(
+            String categoryUid,
+            String categoryTitle,
+            Ingredient catalyst,
+            String wrapperClass,
+            List<Slot> inputs,
+            List<Slot> outputs,
+            int[] dimensions,
+            IRecipeCategory<?> category,
+            IRecipeWrapper wrapper,
+            IFocus<?> focus) {
+        if (!THAUMIC_ASPECT_SOURCE_WRAPPER.equals(wrapperClass)) {
+            throw new IllegalArgumentException("recognized ThaumicJEI aspect-source category " +
+                    "uses unexpected wrapper " + wrapperClass);
+        }
+        if (outputs.size() != 1 || outputs.get(0).alternatives.size() != 1) {
+            throw new IllegalArgumentException("recognized ThaumicJEI aspect-source wrapper no " +
+                    "longer exposes exactly one aspect output");
+        }
+        if (inputs.isEmpty()) {
+            throw new IllegalArgumentException("recognized ThaumicJEI aspect-source wrapper has " +
+                    "no selectable item sources");
+        }
+        List<Ingredient> sources = new ArrayList<Ingredient>(inputs.size());
+        for (Slot input : inputs) {
+            if (input.alternatives.size() != 1
+                    || input.alternatives.get(0).type != VanillaTypes.ITEM) {
+                throw new IllegalArgumentException("recognized ThaumicJEI aspect-source wrapper " +
+                        "no longer exposes one item per selectable source");
+            }
+            sources.add(input.alternatives.get(0));
+        }
+        Ingredient primaryAspect = outputs.get(0).alternatives.get(0);
+        Map<String, List<Ingredient>> sourceOutputs =
+                aspectSourceOutputs(sources, primaryAspect);
+        String recipeKey = recipeKey(categoryUid, wrapper, inputs, outputs);
+        return Recipe.aspectSourcePage(recipeKey, categoryUid, categoryTitle, catalyst,
+                inputs, outputs, dimensions[0], dimensions[1], category, wrapper, focus,
+                sources, sourceOutputs);
+    }
+
+    private Map<String, List<Ingredient>> aspectSourceOutputs(
+            List<Ingredient> sources,
+            Ingredient primaryAspect) {
+        if (primaryAspect == null || primaryAspect.value == null || primaryAspect.type == null) {
+            throw new IllegalArgumentException(
+                    "ThaumicJEI aspect-source page has no typed primary aspect");
+        }
+        final Class<?> aspectListClass = primaryAspect.value.getClass();
+        final Field aspectsField;
+        final Constructor<?> fromItem;
+        final Constructor<?> empty;
+        final Object primaryAspectKey;
+        try {
+            aspectsField = aspectListClass.getField("aspects");
+            fromItem = aspectListClass.getConstructor(ItemStack.class);
+            empty = aspectListClass.getConstructor();
+            Map<?, ?> primaryMap = aspectMap(aspectsField, primaryAspect.value);
+            if (primaryMap.size() != 1) {
+                throw new IllegalArgumentException(
+                        "ThaumicJEI primary aspect list contains " + primaryMap.size() +
+                                " entries instead of one");
+            }
+            primaryAspectKey = primaryMap.keySet().iterator().next();
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException(
+                    "Could not inspect the supported Thaumcraft AspectList shape", exception);
+        }
+
+        Map<String, List<Ingredient>> result =
+                new LinkedHashMap<String, List<Ingredient>>();
+        for (Ingredient source : sources) {
+            List<Ingredient> extras = new ArrayList<Ingredient>();
+            try {
+                if (!(source.value instanceof ItemStack)) {
+                    throw new IllegalArgumentException(
+                            "ThaumicJEI aspect source is not an ItemStack: " + source.key);
+                }
+                Object allAspects = fromItem.newInstance(source.value);
+                Map<?, ?> allAspectMap = aspectMap(aspectsField, allAspects);
+                Object primaryAmount = allAspectMap.get(primaryAspectKey);
+                if (!(primaryAmount instanceof Number)
+                        || source.amount.compareTo(new BigDecimal(primaryAmount.toString())) != 0) {
+                    throw new IllegalArgumentException(
+                            "ThaumicJEI aspect amount for " + source.key + " does not match " +
+                                    "Thaumcraft object tags");
+                }
+                for (Map.Entry<?, ?> entry : allAspectMap.entrySet()) {
+                    if (!(entry.getValue() instanceof Number)
+                            || ((Number) entry.getValue()).intValue() <= 0) {
+                        throw new IllegalArgumentException(
+                                "Thaumcraft object tags contain a non-positive aspect amount for " +
+                                        source.key);
+                    }
+                    Object singleton = empty.newInstance();
+                    @SuppressWarnings("unchecked")
+                    Map<Object, Object> singletonMap =
+                            (Map<Object, Object>) aspectMap(aspectsField, singleton);
+                    singletonMap.put(entry.getKey(), entry.getValue());
+                    Ingredient aspect = ingredientUnchecked(primaryAspect.type, singleton);
+                    if (primaryAspectKey.equals(entry.getKey())) {
+                        extras.add(0, aspect);
+                    } else {
+                        extras.add(aspect);
+                    }
+                }
+            } catch (Throwable throwable) {
+                FatalErrors.rethrowIfFatal(throwable);
+                JeiExportMod.LOGGER.error(
+                        "[jeiexport] Could not resolve Thaumcraft aspect byproducts for {}; " +
+                                "the source remains selectable without hidden byproducts: {}",
+                        source.key, throwable.toString(), throwable);
+                extras.clear();
+            }
+            result.put(Recipe.aspectSourceIdentity(source),
+                    Collections.unmodifiableList(new ArrayList<Ingredient>(extras)));
+        }
+        return Collections.unmodifiableMap(result);
+    }
+
+    private static Map<?, ?> aspectMap(Field aspectsField, Object aspectList)
+            throws IllegalAccessException {
+        Object value = aspectsField.get(aspectList);
+        if (!(value instanceof Map)) {
+            throw new IllegalStateException("Thaumcraft AspectList.aspects is not a Map");
+        }
+        return (Map<?, ?>) value;
     }
 
     /**
@@ -489,6 +640,127 @@ public final class RecipeTreeViewerBridge {
                 nativeLayouts.put(recipe, new LayoutResult(null));
                 return null;
             }
+        }
+    }
+
+    /**
+     * Lets Modular Machinery render its live structure preview inside Recipe Tree. Its 1.12
+     * wrapper refuses to draw unless HEI's concrete recipe GUI is reported as the current screen,
+     * even when the wrapper is being rendered through JEI's public drawable API. The substitution
+     * is limited to that category and to the synchronous native draw call.
+     */
+    NativeRenderScope beginNativeRender(Recipe recipe, Minecraft client) {
+        if (recipe == null || !ModularMachineryStructure.isPreviewCategory(recipe.categoryUid)) {
+            return NativeRenderScope.noOp();
+        }
+        return NativeRenderScope.enter(client, recipesGui, recipe.key);
+    }
+
+    ModularMachineryPreviewScope beginStructurePreview(
+            Recipe recipe, Minecraft client, int left, int top, float scale) {
+        if (!ModularMachineryStructure.isPreviewCategory(recipe.categoryUid)) return null;
+        // Original Modular Machinery uses a different renderer; this adapter is for MMCE.
+        try {
+            recipe.wrapper.getClass().getMethod("getGuiBlueprintScreenJEI");
+        } catch (NoSuchMethodException originalModularMachinery) {
+            return null;
+        }
+        try {
+            return new ModularMachineryPreviewScope(recipe.wrapper, client,
+                    recipe.getWidth(), recipe.getHeight(), left, top, scale);
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("Could not align MMCE structure preview " + recipe.key,
+                    error);
+        }
+    }
+
+    static final class NativeRenderScope {
+        private static final String HEI_RECIPES_GUI = "mezz.jei.gui.recipes.RecipesGui";
+        private static final NativeRenderScope NO_OP =
+                new NativeRenderScope(null, null, null, 0, 0, false);
+
+        private final Minecraft client;
+        private final GuiScreen previousScreen;
+        private final GuiScreen recipesScreen;
+        private final int previousWidth;
+        private final int previousHeight;
+        private final boolean active;
+        private boolean closed;
+
+        private NativeRenderScope(Minecraft client, GuiScreen previousScreen,
+                                  GuiScreen recipesScreen, int previousWidth,
+                                  int previousHeight, boolean active) {
+            this.client = client;
+            this.previousScreen = previousScreen;
+            this.recipesScreen = recipesScreen;
+            this.previousWidth = previousWidth;
+            this.previousHeight = previousHeight;
+            this.active = active;
+        }
+
+        static NativeRenderScope noOp() {
+            return NO_OP;
+        }
+
+        static NativeRenderScope enter(Minecraft client, Object recipesGui, String recipeKey) {
+            if (client == null) {
+                throw new IllegalArgumentException(
+                        "Minecraft client is required for Modular Machinery structure preview " +
+                                recipeKey);
+            }
+            if (!(recipesGui instanceof GuiScreen)) {
+                throw new IllegalStateException(
+                        "HEI returned no GuiScreen for Modular Machinery structure preview " +
+                                recipeKey);
+            }
+            if (!hasClassNamed(recipesGui.getClass(), HEI_RECIPES_GUI)) {
+                throw new IllegalStateException(
+                        "HEI recipe screen " + recipesGui.getClass().getName() +
+                                " does not satisfy Modular Machinery's required " +
+                                HEI_RECIPES_GUI + " contract for " + recipeKey);
+            }
+            GuiScreen previous = client.currentScreen;
+            GuiScreen target = (GuiScreen) recipesGui;
+            if (previous == null) {
+                throw new IllegalStateException(
+                        "Minecraft has no active screen while drawing Modular Machinery preview " +
+                                recipeKey);
+            }
+            if (previous == target) {
+                return noOp();
+            }
+            int oldWidth = target.width;
+            int oldHeight = target.height;
+            target.width = previous.width;
+            target.height = previous.height;
+            client.currentScreen = target;
+            return new NativeRenderScope(client, previous, target, oldWidth, oldHeight, true);
+        }
+
+        private static boolean hasClassNamed(Class<?> type, String expectedName) {
+            Class<?> current = type;
+            while (current != null) {
+                if (expectedName.equals(current.getName())) {
+                    return true;
+                }
+                current = current.getSuperclass();
+            }
+            return false;
+        }
+
+        void close() {
+            if (!active || closed) {
+                return;
+            }
+            closed = true;
+            if (client.currentScreen != recipesScreen) {
+                JeiExportMod.LOGGER.error(
+                        "[jeiexport] Modular Machinery changed the active screen while Recipe " +
+                                "Tree was drawing its structure preview; restoring Recipe Tree");
+            }
+            client.currentScreen = previousScreen;
+            recipesScreen.width = previousWidth;
+            recipesScreen.height = previousHeight;
         }
     }
 
@@ -1211,6 +1483,76 @@ public final class RecipeTreeViewerBridge {
         return Collections.unmodifiableList(normalized);
     }
 
+    /**
+     * ThaumicJEI 1.7.0 publishes every stack accepted by a Crucible catalyst Ingredient through
+     * flat {@code setInputs}, even though its native layout consumes only the first HEI slot as
+     * one rotating catalyst. Preserve that actual recipe contract by combining those item slots
+     * into one interchangeable slot; aspect slots remain independent required inputs.
+     */
+    static List<Slot> normalizeThaumicCrucibleInputs(
+            String categoryUid,
+            String wrapperClass,
+            List<Slot> inputs) {
+        boolean categoryMatches = THAUMIC_CRUCIBLE_CATEGORY_UID.equals(categoryUid);
+        boolean wrapperMatches = THAUMIC_CRUCIBLE_WRAPPER.equals(wrapperClass);
+        if (!categoryMatches && !wrapperMatches) {
+            return inputs;
+        }
+        if (!categoryMatches || !wrapperMatches) {
+            throw new IllegalArgumentException(
+                    "recognized ThaumicJEI Crucible category/wrapper pair no longer matches");
+        }
+        if (inputs == null || inputs.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "recognized ThaumicJEI Crucible wrapper has no semantic inputs");
+        }
+
+        int firstItemSlot = -1;
+        int itemSlotCount = 0;
+        List<Ingredient> catalystAlternatives = new ArrayList<Ingredient>();
+        for (int slotIndex = 0; slotIndex < inputs.size(); slotIndex++) {
+            Slot slot = inputs.get(slotIndex);
+            if (slot == null || slot.alternatives.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "recognized ThaumicJEI Crucible wrapper has an empty input slot");
+            }
+            boolean hasItem = false;
+            boolean hasOther = false;
+            for (Ingredient alternative : slot.alternatives) {
+                if (alternative.type == VanillaTypes.ITEM) hasItem = true;
+                else hasOther = true;
+            }
+            if (hasItem && hasOther) {
+                throw new IllegalArgumentException(
+                        "recognized ThaumicJEI Crucible wrapper mixes item and aspect " +
+                                "alternatives in one slot");
+            }
+            if (!hasItem) continue;
+            if (firstItemSlot < 0) firstItemSlot = slotIndex;
+            itemSlotCount++;
+            catalystAlternatives.addAll(slot.alternatives);
+        }
+        if (firstItemSlot < 0) {
+            throw new IllegalArgumentException(
+                    "recognized ThaumicJEI Crucible wrapper has no catalyst item slot");
+        }
+        if (itemSlotCount == 1) {
+            return inputs;
+        }
+
+        List<Slot> normalized = new ArrayList<Slot>(inputs.size() - itemSlotCount + 1);
+        for (int slotIndex = 0; slotIndex < inputs.size(); slotIndex++) {
+            Slot slot = inputs.get(slotIndex);
+            boolean itemSlot = slot.alternatives.get(0).type == VanillaTypes.ITEM;
+            if (slotIndex == firstItemSlot) {
+                normalized.add(new Slot(catalystAlternatives));
+            } else if (!itemSlot) {
+                normalized.add(slot);
+            }
+        }
+        return Collections.unmodifiableList(normalized);
+    }
+
     private static boolean sameSemanticSlot(Slot left, Slot right) {
         if (left == null || right == null
                 || left.alternatives.size() != right.alternatives.size()) {
@@ -1582,19 +1924,27 @@ public final class RecipeTreeViewerBridge {
         private final IRecipeWrapper wrapper;
         private final IFocus<?> focus;
         private final boolean emcTransmutation;
+        private final List<Ingredient> selectableAspectSources;
+        private final Map<String, List<Ingredient>> aspectSourceOutputs;
+        private final boolean selectedAspectSource;
 
         Recipe(String key, String categoryUid, String categoryTitle,
                Ingredient catalystMachine, List<Slot> inputs, List<Slot> outputs,
                int width, int height, IRecipeCategory<?> category,
                IRecipeWrapper wrapper, IFocus<?> focus) {
             this(key, categoryUid, categoryTitle, catalystMachine, inputs, outputs,
-                    width, height, category, wrapper, focus, false);
+                    width, height, category, wrapper, focus, false,
+                    Collections.<Ingredient>emptyList(),
+                    Collections.<String, List<Ingredient>>emptyMap(), false);
         }
 
         private Recipe(String key, String categoryUid, String categoryTitle,
                Ingredient catalystMachine, List<Slot> inputs, List<Slot> outputs,
                int width, int height, IRecipeCategory<?> category,
-               IRecipeWrapper wrapper, IFocus<?> focus, boolean emcTransmutation) {
+               IRecipeWrapper wrapper, IFocus<?> focus, boolean emcTransmutation,
+               List<Ingredient> selectableAspectSources,
+               Map<String, List<Ingredient>> aspectSourceOutputs,
+               boolean selectedAspectSource) {
             this.key = key;
             this.categoryUid = categoryUid;
             this.categoryTitle = categoryTitle;
@@ -1607,6 +1957,11 @@ public final class RecipeTreeViewerBridge {
             this.wrapper = wrapper;
             this.focus = focus;
             this.emcTransmutation = emcTransmutation;
+            this.selectableAspectSources = Collections.unmodifiableList(
+                    new ArrayList<Ingredient>(selectableAspectSources));
+            this.aspectSourceOutputs = immutableAspectSourceOutputs(
+                    aspectSourceOutputs);
+            this.selectedAspectSource = selectedAspectSource;
         }
 
         static Recipe emc(String outputKey, Ingredient catalystMachine,
@@ -1614,7 +1969,111 @@ public final class RecipeTreeViewerBridge {
             return new Recipe("projecte:emc/" + Naming.hash8(outputKey),
                     EMC_CATEGORY_UID, EMC_CATEGORY_TITLE, catalystMachine,
                     inputs, outputs, EMC_RECIPE_WIDTH, EMC_RECIPE_HEIGHT,
-                    null, null, null, true);
+                    null, null, null, true, Collections.<Ingredient>emptyList(),
+                    Collections.<String, List<Ingredient>>emptyMap(), false);
+        }
+
+        static Recipe aspectSourcePage(
+                String key, String categoryUid, String categoryTitle,
+                Ingredient catalystMachine, List<Slot> inputs, List<Slot> outputs,
+                int width, int height, IRecipeCategory<?> category,
+                IRecipeWrapper wrapper, IFocus<?> focus, List<Ingredient> sources,
+                Map<String, List<Ingredient>> sourceOutputs) {
+            return new Recipe(key, categoryUid, categoryTitle, catalystMachine, inputs, outputs,
+                    width, height, category, wrapper, focus, false, sources,
+                    sourceOutputs, false);
+        }
+
+        public Recipe selectAspectSource(Ingredient source) {
+            if (!isAspectSourcePage() || source == null) return null;
+            boolean found = false;
+            for (Ingredient candidate : selectableAspectSources) {
+                if (candidate.key.equals(source.key)
+                        && candidate.amount.compareTo(source.amount) == 0) {
+                    source = candidate;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) return null;
+            // ThaumicJEI reports the aspect value on each selectable item input. In the
+            // planner that value is the recipe yield, not the number of items consumed.
+            // One selected item therefore produces source.amount aspects.
+            Ingredient selectedInput = withAmount(source, BigDecimal.ONE);
+            Ingredient aspectOutput = withAmount(
+                    outputs.get(0).alternatives.get(0), source.amount);
+            List<Slot> selectedInputs = Collections.singletonList(
+                    new Slot(Collections.singletonList(selectedInput)));
+            List<Slot> selectedOutputs = new ArrayList<Slot>();
+            selectedOutputs.add(new Slot(Collections.singletonList(aspectOutput)));
+            for (Ingredient byproduct : getAspectSourceByproducts(source)) {
+                selectedOutputs.add(new Slot(Collections.singletonList(byproduct)));
+            }
+            // Keep the stable key based on ThaumicJEI's original semantic values so histories
+            // written before this quantity correction continue to resolve.
+            String selectedKey = aspectSourceKey(Collections.singletonList(
+                    new Slot(Collections.singletonList(source))));
+            return new Recipe(selectedKey, categoryUid, categoryTitle, catalystMachine,
+                    selectedInputs, selectedOutputs, THAUMIC_ASPECT_SOURCE_RECIPE_WIDTH,
+                    THAUMIC_ASPECT_SOURCE_RECIPE_HEIGHT, category, wrapper, focus, false,
+                    Collections.<Ingredient>emptyList(),
+                    Collections.<String, List<Ingredient>>emptyMap(), true);
+        }
+
+        static String aspectSourceIdentity(Ingredient source) {
+            return source.key + "\u0000" + decimal(source.amount);
+        }
+
+        public List<Ingredient> getAspectSourceByproducts(Ingredient source) {
+            List<Ingredient> result = new ArrayList<Ingredient>();
+            String primaryKey = outputs.get(0).alternatives.get(0).key;
+            for (Ingredient aspect : getAspectSourceOutputs(source)) {
+                if (!primaryKey.equals(aspect.key)) result.add(aspect);
+            }
+            return Collections.unmodifiableList(result);
+        }
+
+        public List<Ingredient> getAspectSourceOutputs(Ingredient source) {
+            if (source == null) return Collections.emptyList();
+            List<Ingredient> result = aspectSourceOutputs.get(aspectSourceIdentity(source));
+            return result == null ? Collections.<Ingredient>emptyList() : result;
+        }
+
+        private static Map<String, List<Ingredient>> immutableAspectSourceOutputs(
+                Map<String, List<Ingredient>> source) {
+            Map<String, List<Ingredient>> result =
+                    new LinkedHashMap<String, List<Ingredient>>();
+            if (source != null) {
+                for (Map.Entry<String, List<Ingredient>> entry : source.entrySet()) {
+                    List<Ingredient> values = entry.getValue() == null
+                            ? Collections.<Ingredient>emptyList() : entry.getValue();
+                    result.put(entry.getKey(), Collections.unmodifiableList(
+                            new ArrayList<Ingredient>(values)));
+                }
+            }
+            return Collections.unmodifiableMap(result);
+        }
+
+        private static Ingredient withAmount(Ingredient ingredient, BigDecimal amount) {
+            return new Ingredient(ingredient.type, ingredient.value, ingredient.key,
+                    ingredient.displayName, amount);
+        }
+
+        public Recipe resolveAspectSource(String selectedKey) {
+            if (!isAspectSourcePage() || selectedKey == null) return null;
+            for (Ingredient source : selectableAspectSources) {
+                List<Slot> selectedInputs = Collections.singletonList(
+                        new Slot(Collections.singletonList(source)));
+                if (selectedKey.equals(aspectSourceKey(selectedInputs))) {
+                    return selectAspectSource(source);
+                }
+            }
+            return null;
+        }
+
+        private String aspectSourceKey(List<Slot> selectedInputs) {
+            return semanticRecipeKey(
+                    categoryUid, semanticSlots(selectedInputs), semanticSlots(outputs));
         }
 
         public String getKey() {
@@ -1651,6 +2110,18 @@ public final class RecipeTreeViewerBridge {
 
         public boolean isEmcTransmutation() {
             return emcTransmutation;
+        }
+
+        public boolean isAspectSourcePage() {
+            return !selectableAspectSources.isEmpty();
+        }
+
+        public boolean isSelectedAspectSource() {
+            return selectedAspectSource;
+        }
+
+        public List<Ingredient> getSelectableAspectSources() {
+            return selectableAspectSources;
         }
     }
 

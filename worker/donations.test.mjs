@@ -153,10 +153,10 @@ test('monthly tier management selects the newest active account subscription', a
   const client = {
     subscriptions: {
       async search(parameters) {
-        assert.equal(
-          parameters.query,
-          "metadata['mrt_donor_key']:'user:123e4567-e89b-42d3-a456-426614174000'",
-        );
+        assert.deepEqual(parameters, {
+          query: "metadata['mrt_donor_key']:'user:123e4567-e89b-42d3-a456-426614174000'",
+          limit: 20,
+        });
         return {
           data: [
             {...newest, id: 'sub_old', created: 10},

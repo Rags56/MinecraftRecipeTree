@@ -476,17 +476,21 @@ export function layoutTree(
     }
   }
 
-  // Pass 3: emit nodes and edges (child top-center up to parent bottom-center).
-  const elbow = (x1: number, y1: number, x2: number, y2: number) => {
-    const midY = Math.round((y1 + y2) / 2);
-    edges.push({x: x1 - EDGE_T / 2, y: Math.min(y1, midY), w: EDGE_T, h: Math.abs(midY - y1)});
+  // Pass 3: emit nodes and one direct edge per relationship. Shared elbow rows
+  // made unrelated branches look connected when their horizontal segments
+  // overlapped; direct segments can only meet at their real parent endpoint.
+  const connect = (x1: number, y1: number, x2: number, y2: number) => {
+    const length = Math.hypot(x2 - x1, y2 - y1);
+    if (!(length > 0) || !Number.isFinite(length)) {
+      throw new Error('Tree graph edge endpoints must have distinct finite positions.');
+    }
     edges.push({
-      x: Math.min(x1, x2) - EDGE_T / 2,
-      y: midY - EDGE_T / 2,
-      w: Math.abs(x2 - x1) + EDGE_T,
+      x: (x1 + x2) / 2 - length / 2,
+      y: (y1 + y2) / 2 - EDGE_T / 2,
+      w: length,
       h: EDGE_T,
+      angle: Math.atan2(y2 - y1, x2 - x1),
     });
-    edges.push({x: x2 - EDGE_T / 2, y: Math.min(midY, y2), w: EDGE_T, h: Math.abs(y2 - midY)});
   };
 
   for (const record of traversal) {
@@ -517,7 +521,7 @@ export function layoutTree(
     });
 
     for (const child of record.children) {
-      elbow(
+      connect(
         child.center,
         rowTop[depth + 1],
         center,

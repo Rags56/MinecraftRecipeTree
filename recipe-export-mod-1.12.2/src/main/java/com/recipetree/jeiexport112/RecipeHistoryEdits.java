@@ -16,12 +16,9 @@ final class RecipeHistoryEdits {
             entries.add(editedEntry);
             return entries.size() - 1;
         }
-        if (currentIndex + 1 < entries.size()) {
-            entries.subList(currentIndex + 1, entries.size()).clear();
-        }
         if (preserveCurrentSnapshot) {
-            entries.add(editedEntry);
-            return entries.size() - 1;
+            entries.add(currentIndex + 1, editedEntry);
+            return currentIndex + 1;
         }
         entries.set(currentIndex, editedEntry);
         return currentIndex;
@@ -47,5 +44,13 @@ final class RecipeHistoryEdits {
         }
         entries.add(workingEntry);
         return entries.size() - 1;
+    }
+
+    /** Removes exactly one history entry and keeps the current selection aligned. */
+    static <T> int delete(List<T> entries, int currentIndex, int deletedIndex) {
+        if (deletedIndex < 0 || deletedIndex >= entries.size()) return currentIndex;
+        entries.remove(deletedIndex);
+        if (currentIndex == deletedIndex) return -1;
+        return currentIndex > deletedIndex ? currentIndex - 1 : currentIndex;
     }
 }

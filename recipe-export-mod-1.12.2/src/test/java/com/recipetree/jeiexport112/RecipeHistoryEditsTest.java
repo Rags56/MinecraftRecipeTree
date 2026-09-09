@@ -35,14 +35,27 @@ public class RecipeHistoryEditsTest {
     }
 
     @Test
-    public void editingOlderHistoryDiscardsItsForwardBranchWithoutAppending() {
+    public void editingOlderHistoryPreservesEveryUnrelatedEntry() {
         List<String> history = new ArrayList<String>(Arrays.asList("older", "newer"));
 
         int selected = RecipeHistoryEdits.commit(
                 history, 0, "changed older", false);
 
-        assertEquals(Collections.singletonList("changed older"), history);
+        assertEquals(Arrays.asList("changed older", "newer"), history);
         assertEquals(0, selected);
+    }
+
+    @Test
+    public void editingOlderSnapshotInsertsWorkingCopyWithoutRemovingLaterHistory() {
+        List<String> history = new ArrayList<String>(Arrays.asList(
+                "older snapshot", "unrelated newer tree"));
+
+        int selected = RecipeHistoryEdits.commit(
+                history, 0, "edited working tree", true);
+
+        assertEquals(Arrays.asList(
+                "older snapshot", "edited working tree", "unrelated newer tree"), history);
+        assertEquals(1, selected);
     }
 
     @Test
@@ -79,5 +92,27 @@ public class RecipeHistoryEditsTest {
         assertEquals(Arrays.asList(
                 "saved version 1", "saved version 2", "working version 3"), history);
         assertEquals(2, selected);
+    }
+
+    @Test
+    public void deletingAnOlderEntryKeepsTheCurrentEntrySelected() {
+        List<String> history = new ArrayList<String>(Arrays.asList(
+                "older", "current", "newer"));
+
+        int selected = RecipeHistoryEdits.delete(history, 1, 0);
+
+        assertEquals(Arrays.asList("current", "newer"), history);
+        assertEquals(0, selected);
+    }
+
+    @Test
+    public void deletingTheCurrentEntryDetachesTheOpenTreeFromHistory() {
+        List<String> history = new ArrayList<String>(Arrays.asList(
+                "older", "current", "newer"));
+
+        int selected = RecipeHistoryEdits.delete(history, 1, 1);
+
+        assertEquals(Arrays.asList("older", "newer"), history);
+        assertEquals(-1, selected);
     }
 }

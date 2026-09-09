@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -55,11 +55,29 @@ export function AccountModal({
   const [tierAmount, setTierAmount] = useState('');
   const [reviewedTier, setReviewedTier] = useState<number | null>(null);
   const [loadingTier, setLoadingTier] = useState(false);
+  const [tierError, setTierError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [editingDetails, setEditingDetails] = useState(false);
+
+  const refreshSubscription = useCallback(() => {
+    setSubscription(null);
+    setTierAmount('');
+    setTierError(null);
+    setLoadingTier(true);
+    void loadAccountSubscription()
+      .then(value => {
+        setSubscription(value);
+        setTierAmount(value ? (value.amountCents / 100).toFixed(2) : '');
+      })
+      .catch(cause => {
+        console.error('Monthly donation tier could not be loaded.', cause);
+        setTierError(cause instanceof Error ? cause.message : 'Monthly donation tier could not be loaded.');
+      })
+      .finally(() => setLoadingTier(false));
+  }, []);
 
   useEffect(() => {
     if (!visible) return;
@@ -71,19 +89,8 @@ export function AccountModal({
     setConfirmDelete(false);
     setEditingDetails(false);
     setReviewedTier(null);
-    setSubscription(null);
-    setTierAmount('');
-    setLoadingTier(true);
-    void loadAccountSubscription()
-      .then(value => {
-        setSubscription(value);
-        setTierAmount(value ? (value.amountCents / 100).toFixed(2) : '');
-      })
-      .catch(cause => {
-        console.error('Monthly donation tier could not be loaded.', cause);
-      })
-      .finally(() => setLoadingTier(false));
-  }, [visible]);
+    refreshSubscription();
+  }, [refreshSubscription, visible]);
 
   const scaledCardStyle = Platform.OS === 'web'
     ? ({zoom: interfaceZoom, width: `${100 / interfaceZoom}%`, maxWidth: 620 / interfaceZoom} as object)
@@ -281,6 +288,16 @@ export function AccountModal({
               <Text style={styles.sectionTitle}>Monthly donation tier</Text>
               {loadingTier ? (
                 <ActivityIndicator color={theme.accent} />
+              ) : tierError ? (
+                <>
+                  <Text accessibilityRole="alert" style={styles.error}>{tierError}</Text>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    style={styles.button}
+                    onPress={refreshSubscription}>
+                    <Text style={styles.buttonText}>Retry</Text>
+                  </TouchableOpacity>
+                </>
               ) : subscription ? (
                 <>
                   <Text style={styles.helpText}>

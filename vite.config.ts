@@ -58,6 +58,7 @@ export default defineConfig(async ({command}) => {
                 name: 'minecraft-recipe-tree-beta',
                 vars: {
                   BETA_DATA_ORIGIN,
+                  DATASET_RESPONSE_CACHE: 'true',
                   SUPABASE_URL,
                   BETA_CANDIDATE_DATASET_SLUG,
                   BETA_CANDIDATE_PUBLICATION_ID,
@@ -73,6 +74,7 @@ export default defineConfig(async ({command}) => {
                   name: 'minecraft-recipe-tree-production',
                   vars: {
                     DATASET_ADMIN_ENABLED: 'true',
+                    DATASET_RESPONSE_CACHE: 'true',
                     SUPABASE_URL,
                     DONATION_GITHUB_ACTIONS_MONTHLY_CENTS,
                     DONATION_CLOUDFLARE_MONTHLY_CENTS,
@@ -85,6 +87,7 @@ export default defineConfig(async ({command}) => {
           main: './worker/index.ts',
           compatibility_flags: ['nodejs_compat'],
           cache: {enabled: true},
+          observability: {enabled: true, logs: {enabled: true, invocation_logs: false}},
           assets: {
             binding: 'ASSETS',
             run_worker_first: [

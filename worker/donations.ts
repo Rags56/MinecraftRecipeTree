@@ -337,7 +337,6 @@ export async function managedDonationSubscription(
   const result = await client.subscriptions.search({
     query: `metadata['mrt_donor_key']:'user:${userId}'`,
     limit: 20,
-    expand: ['data.items.data.price.product'],
   });
   const subscription = result.data
     .filter(entry => ['active', 'trialing', 'past_due'].includes(entry.status))

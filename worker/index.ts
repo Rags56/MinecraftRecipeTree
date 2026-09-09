@@ -1,3 +1,4 @@
+import {cachedDatasetResponse} from './datasetResponseCache.ts';
 import handler from 'vinext/server/app-router-entry';
 import {proxyBetaDatasetRequest} from './betaDataProxy.ts';
 import {CORE_DATASET_UPLOAD_BASE_PATH, handleCoreDatasetUpload} from './coreDatasetUpload.ts';
@@ -242,7 +243,9 @@ const worker = {
   ): Promise<Response> {
     const runtime = (env ?? {}) as DatasetRuntime;
     try {
-      return withSecurityHeaders(request, await dispatchRequest(request, env, ctx), runtime);
+      return withSecurityHeaders(request, await (runtime.DATASET_RESPONSE_CACHE === 'true'
+        ? cachedDatasetResponse(request, () => dispatchRequest(request, env, ctx), ctx)
+        : dispatchRequest(request, env, ctx)), runtime);
     } catch (error) {
       console.error('Minecraft Recipe Tree request failed closed.', error);
       return withSecurityHeaders(request, noStoreJson({error: 'Request failed.'}, 500), runtime);

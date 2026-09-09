@@ -71,6 +71,13 @@
       "when": 1788150669630,
       "tag": "0009_remarkable_otto_octavius",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1788314519863,
+      "tag": "0010_slim_invisible_woman",
+      "breakpoints": true
     }
   ]
 }

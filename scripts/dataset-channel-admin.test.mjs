@@ -171,12 +171,12 @@ test('activation reports a committed mutation with inconclusive verification aft
       assert.ok(error instanceof DatasetChannelVerificationInconclusiveError);
       assert.equal(error.mutationCommitted, true);
       assert.equal(error.code, 'DATASET_CHANNEL_MUTATION_COMMITTED_VERIFICATION_INCONCLUSIVE');
-      assert.equal(error.attempts, 4);
-      assert.match(error.message, /mutation committed.*inconclusive after 4 attempts/i);
+      assert.equal(error.attempts, 9);
+      assert.match(error.message, /mutation committed.*inconclusive after 9 attempts/i);
       return true;
     },
   );
-  assert.equal(calls, 5);
+  assert.equal(calls, 10);
   assert.equal(logged.length, 1);
   assert.match(logged[0], /mutation committed/i);
 });

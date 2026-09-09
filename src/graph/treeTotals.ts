@@ -40,8 +40,21 @@ const warnedUnknownByproductBalances = new Set<string>();
 const warnedStochasticByproducts = new Set<string>();
 const warnedStochasticInputConsumption = new Set<string>();
 
-export function treeTotalIdentity(total: Pick<TreeTotal, 'key' | 'tag'>): string {
-  return total.tag ? `#${total.tag}` : total.key;
+interface TreeTotalIdentitySource {
+  key: string;
+  tag?: string;
+  variants?: number;
+  variantCount?: number;
+  alternatives?: string[];
+}
+
+function ingredientVariantCount(total: TreeTotalIdentitySource): number {
+  return total.variants ?? total.variantCount ?? total.alternatives?.length ?? 1;
+}
+
+export function treeTotalIdentity(total: TreeTotalIdentitySource): string {
+  const variants = ingredientVariantCount(total);
+  return total.tag && variants > 1 ? `#${total.tag}` : total.key;
 }
 
 function addTotal(
@@ -52,7 +65,7 @@ function addTotal(
   tag?: string,
   aggregate: 'sum' | 'max' = 'sum',
 ) {
-  const logicalKey = treeTotalIdentity({key, tag});
+  const logicalKey = treeTotalIdentity({key, tag, variants});
   const current = target.get(logicalKey) ?? {
     key,
     amount: amount == null ? null : 0,
@@ -75,6 +88,7 @@ interface InputBalance {
   nodeId: string;
   key: string;
   tag?: string;
+  alternatives?: string[];
   variants: number;
   requiredAmount: number;
   remainingAmount: number;
@@ -82,7 +96,8 @@ interface InputBalance {
 
 interface ProducerBalance {
   sourceId: string;
-  logicalKey: string;
+  ingredient: TreeTotalIdentitySource;
+  totalIdentity: string;
   remainingAmount: number | null;
 }
 
@@ -109,24 +124,29 @@ function subtractTotal(
 
 function consumeProducerBalance(
   producers: ProducerBalance[],
-  logicalKey: string,
+  ingredient: TreeTotalIdentitySource,
   requestedAmount: number,
   preferredSourceId?: string,
-): {consumed: number; allocations: ByproductAllocation[]} {
+): {
+  consumed: number;
+  allocations: ByproductAllocation[];
+  consumedByTotal: Map<string, number>;
+} {
   let remaining = requestedAmount;
   const allocations: ByproductAllocation[] = [];
+  const consumedByTotal = new Map<string, number>();
+  const compatible = producers.filter(producer =>
+    producerMatchesIngredient(producer.ingredient, ingredient),
+  );
+  if (compatible.some(producer => producer.remainingAmount == null)) {
+    return {consumed: 0, allocations, consumedByTotal};
+  }
   const ordered = preferredSourceId
     ? [
-        ...producers.filter(
-          producer =>
-            producer.logicalKey === logicalKey && producer.sourceId === preferredSourceId,
-        ),
-        ...producers.filter(
-          producer =>
-            producer.logicalKey === logicalKey && producer.sourceId !== preferredSourceId,
-        ),
+        ...compatible.filter(producer => producer.sourceId === preferredSourceId),
+        ...compatible.filter(producer => producer.sourceId !== preferredSourceId),
       ]
-    : producers.filter(producer => producer.logicalKey === logicalKey);
+    : compatible;
 
   for (const producer of ordered) {
     if (remaining <= 0 || producer.remainingAmount == null || producer.remainingAmount <= 0) {
@@ -136,8 +156,39 @@ function consumeProducerBalance(
     producer.remainingAmount -= consumed;
     remaining -= consumed;
     allocations.push({producerSourceId: producer.sourceId, amount: consumed});
+    consumedByTotal.set(
+      producer.totalIdentity,
+      (consumedByTotal.get(producer.totalIdentity) ?? 0) + consumed,
+    );
   }
-  return {consumed: requestedAmount - remaining, allocations};
+  return {
+    consumed: requestedAmount - remaining,
+    allocations,
+    consumedByTotal,
+  };
+}
+
+function producerMatchesIngredient(
+  producer: TreeTotalIdentitySource,
+  requested: TreeTotalIdentitySource,
+): boolean {
+  const requestedVariants = ingredientVariantCount(requested);
+  if (requested.tag && requestedVariants > 1) {
+    return (
+      producer.tag === requested.tag ||
+      requested.alternatives?.includes(producer.key) === true
+    );
+  }
+  return producer.key === requested.key;
+}
+
+function subtractConsumedProducerTotals(
+  byproducts: Map<string, TreeTotal>,
+  consumedByTotal: Map<string, number>,
+): void {
+  for (const [logicalKey, amount] of consumedByTotal) {
+    subtractTotal(byproducts, logicalKey, amount);
+  }
 }
 
 function mergeCoverage(
@@ -180,30 +231,32 @@ function applyByproductCredits(
 
   for (const commitment of committedCredits) {
     const logicalKey = treeTotalIdentity(commitment.node);
-    const byproduct = byproducts.get(logicalKey);
     let consumed = 0;
     const allocations: ByproductAllocation[] = [];
-    if (byproduct?.amount != null) {
-      for (const intendedAllocation of commitment.allocations) {
-        const result = consumeProducerBalance(
-          producerBalances,
-          logicalKey,
-          intendedAllocation.amount,
-          intendedAllocation.producerSourceId,
-        );
-        consumed += result.consumed;
-        allocations.push(...result.allocations);
-      }
-      const unallocated = commitment.intendedAmount - consumed;
-      if (unallocated > 0) {
-        const result = consumeProducerBalance(producerBalances, logicalKey, unallocated);
-        consumed += result.consumed;
-        allocations.push(...result.allocations);
-      }
+    for (const intendedAllocation of commitment.allocations) {
+      const result = consumeProducerBalance(
+        producerBalances,
+        commitment.node,
+        intendedAllocation.amount,
+        intendedAllocation.producerSourceId,
+      );
+      consumed += result.consumed;
+      allocations.push(...result.allocations);
+      subtractConsumedProducerTotals(byproducts, result.consumedByTotal);
+    }
+    const unallocated = commitment.intendedAmount - consumed;
+    if (unallocated > 0) {
+      const result = consumeProducerBalance(
+        producerBalances,
+        commitment.node,
+        unallocated,
+      );
+      consumed += result.consumed;
+      allocations.push(...result.allocations);
+      subtractConsumedProducerTotals(byproducts, result.consumedByTotal);
     }
 
     if (consumed > 0) {
-      subtractTotal(byproducts, logicalKey, consumed);
       addTotal(
         credits,
         commitment.node.key,
@@ -242,6 +295,7 @@ function applyByproductCredits(
         nodeId: commitment.node.id,
         key: commitment.node.key,
         tag: commitment.node.tag,
+        alternatives: commitment.node.alternatives,
         variants: commitment.node.variantCount ?? 1,
         requiredAmount: missing,
         remainingAmount: missing,
@@ -252,35 +306,53 @@ function applyByproductCredits(
   for (const inputBalance of inputBalances) {
     const logicalKey = treeTotalIdentity(inputBalance);
     const input = inputs.get(logicalKey);
-    const byproduct = byproducts.get(logicalKey);
-    if (!byproduct) continue;
-    if (input?.amount == null || byproduct.amount == null) {
+    const compatibleProducers = producerBalances.filter(producer =>
+      producerMatchesIngredient(producer.ingredient, inputBalance),
+    );
+    if (compatibleProducers.length === 0) continue;
+    if (
+      input?.amount == null ||
+      compatibleProducers.some(producer => producer.remainingAmount == null)
+    ) {
       if (!warnedUnknownByproductBalances.has(logicalKey)) {
         warnedUnknownByproductBalances.add(logicalKey);
         console.warn('Byproduct credit was not applied because its material balance is unknown.', {
           logicalIngredient: logicalKey,
           inputAmount: input?.amount,
-          byproductAmount: byproduct.amount,
+          byproductAmounts: compatibleProducers.map(producer => producer.remainingAmount),
         });
       }
       continue;
     }
-    const creditedAmount = Math.min(inputBalance.remainingAmount, byproduct.amount);
+    const availableAmount = compatibleProducers.reduce(
+      (sum, producer) => sum + (producer.remainingAmount ?? 0),
+      0,
+    );
+    const creditedAmount = Math.min(inputBalance.remainingAmount, availableAmount);
     if (creditedAmount <= 0) continue;
-    const result = consumeProducerBalance(producerBalances, logicalKey, creditedAmount);
+    const result = consumeProducerBalance(
+      producerBalances,
+      inputBalance,
+      creditedAmount,
+    );
     if (result.consumed !== creditedAmount) {
       throw new Error(
         `Byproduct producers for ${logicalKey} exposed ${result.consumed}; expected ${creditedAmount}.`,
       );
     }
     subtractTotal(inputs, logicalKey, creditedAmount);
-    subtractTotal(byproducts, logicalKey, creditedAmount);
+    subtractConsumedProducerTotals(byproducts, result.consumedByTotal);
     inputBalance.remainingAmount -= creditedAmount;
     addTotal(
       credits,
       inputBalance.key,
       creditedAmount,
-      Math.max(inputBalance.variants, byproduct.variants),
+      Math.max(
+        inputBalance.variants,
+        ...compatibleProducers.map(producer =>
+          ingredientVariantCount(producer.ingredient),
+        ),
+      ),
       inputBalance.tag,
     );
     mergeCoverage(coverageByNode, {
@@ -402,7 +474,8 @@ export function calculateTreeTotals(
         );
         producerBalances.push({
           sourceId: frame.sourceId,
-          logicalKey: treeTotalIdentity(output),
+          ingredient: output,
+          totalIdentity: treeTotalIdentity(output),
           remainingAmount: amount,
         });
       }
@@ -454,6 +527,7 @@ export function calculateTreeTotals(
             nodeId: frame.nodeId,
             key: node.key,
             tag: node.tag,
+            alternatives: node.alternatives,
             variants: node.variantCount ?? 1,
             requiredAmount: required,
             remainingAmount: required,

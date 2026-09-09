@@ -4,7 +4,9 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.junit.Test;
+import org.lwjgl.input.Keyboard;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -18,9 +20,30 @@ import static org.junit.Assert.assertTrue;
 
 public class RecipeTreeScreenPolicyTest {
     @Test
-    public void floatingPreviewOnlyFillsInForAHiddenSummaryPanel() {
-        assertFalse(RecipeTreeScreen.shouldDrawFloatingPreview(true));
-        assertTrue(RecipeTreeScreen.shouldDrawFloatingPreview(false));
+    public void summaryScrollingReachesTheLastRowsAndClampsAtBothEnds() {
+        assertEquals(0, RecipeTreeScreen.summaryMaximumScroll(4, 10));
+        assertEquals(14, RecipeTreeScreen.summaryMaximumScroll(30, 16));
+        assertEquals(3, RecipeTreeScreen.scrollSummaryRows(0, -120, 14));
+        assertEquals(14, RecipeTreeScreen.scrollSummaryRows(12, -120, 14));
+        assertEquals(0, RecipeTreeScreen.scrollSummaryRows(2, 120, 14));
+        assertEquals(5, RecipeTreeScreen.scrollSummaryRows(5, 0, 14));
+        assertEquals(0, RecipeTreeScreen.scrollSummaryRows(14, -120, 0));
+    }
+
+    @Test
+    public void summaryScrollLimitAccountsForGridRowsAndReducedPanelHeight() {
+        // A seven-column grid containing 50 items needs eight rows, including the last partial row.
+        assertEquals(5, RecipeTreeScreen.summaryMaximumScroll((50 + 6) / 7, 3));
+        assertEquals(7, RecipeTreeScreen.summaryMaximumScroll(8, 0));
+        assertEquals(0, RecipeTreeScreen.summaryMaximumScroll(0, 0));
+    }
+
+    @Test
+    public void inventoryKeyMatchesTheConfiguredKeyWithoutTransientModifierState() {
+        assertTrue(RecipeTreeScreen.matchesConfiguredInventoryKey(Keyboard.KEY_E, Keyboard.KEY_E));
+        assertTrue(RecipeTreeScreen.matchesConfiguredInventoryKey(Keyboard.KEY_I, Keyboard.KEY_I));
+        assertFalse(RecipeTreeScreen.matchesConfiguredInventoryKey(Keyboard.KEY_E, Keyboard.KEY_I));
+        assertFalse(RecipeTreeScreen.matchesConfiguredInventoryKey(Keyboard.KEY_NONE, Keyboard.KEY_NONE));
     }
 
     @Test
@@ -135,6 +158,18 @@ public class RecipeTreeScreenPolicyTest {
         RecipeTreeLayout.Size scaledSize = RecipeTreeScreen.pickerRecipeCardSize(156, 84, 0.5F);
         assertEquals(78, scaledSize.width);
         assertEquals(42, scaledSize.height);
+    }
+
+    @Test
+    public void recipePickerSearchMatchesDisplayNamesAndStableIngredientKeys() {
+        RecipeTreeViewerBridge.Ingredient ingredient =
+                new RecipeTreeViewerBridge.Ingredient(
+                        null, "item|thaumcraft:quicksilver", "item|thaumcraft:quicksilver",
+                        "Quicksilver Drop", BigDecimal.ONE);
+
+        assertTrue(RecipeTreeScreen.pickerIngredientMatchesSearch(ingredient, "quicksilver"));
+        assertTrue(RecipeTreeScreen.pickerIngredientMatchesSearch(ingredient, "thaumcraft"));
+        assertFalse(RecipeTreeScreen.pickerIngredientMatchesSearch(ingredient, "aer crystal"));
     }
 
     @Test

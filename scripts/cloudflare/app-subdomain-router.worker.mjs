@@ -125,7 +125,8 @@ export default {
     if (rewrittenLocation) headers.set('location', rewrittenLocation);
 
     const contentType = headers.get('content-type') || '';
-    if (!shouldRewriteBody(contentType)) {
+    if (!shouldRewriteBody(contentType)
+      || (route.serviceBinding && !contentType.toLowerCase().includes('text/html'))) {
       return new Response(upstreamResponse.body, {
         status: upstreamResponse.status,
         statusText: upstreamResponse.statusText,

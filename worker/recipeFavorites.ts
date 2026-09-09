@@ -39,6 +39,8 @@ const legacySchemaStatements = [
    ON recipe_favorites (pack_slug, publication_id, item_key, client_hash)`,
   `CREATE INDEX IF NOT EXISTS recipe_favorites_ranking_idx
    ON recipe_favorites (pack_slug, publication_id, item_key, recipe_category, recipe_index)`,
+  `CREATE INDEX IF NOT EXISTS recipe_favorites_client_hash_idx
+   ON recipe_favorites (client_hash)`,
 ] as const;
 
 const initializedDatabases = new WeakMap<object, Promise<void>>();

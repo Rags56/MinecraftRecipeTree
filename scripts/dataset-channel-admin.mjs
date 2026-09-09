@@ -8,7 +8,19 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_TIMEOUT_MS = 120_000;
 const MAX_RESPONSE_BYTES = 64 * 1024;
 const UNSAFE_IDENTITY_TEXT_PATTERN = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/u;
-const POST_MUTATION_CATALOG_RETRY_DELAYS_MS = Object.freeze([200, 500, 1_000]);
+// The public catalog's edge cache is bounded to 60 seconds. A mutation purges the current POP,
+// while these retries let verification outwait one already-populated entry in another POP without
+// ever repeating the acknowledged mutation.
+const POST_MUTATION_CATALOG_RETRY_DELAYS_MS = Object.freeze([
+  200,
+  500,
+  1_000,
+  2_000,
+  4_000,
+  8_000,
+  16_000,
+  32_000,
+]);
 const EXPECTED_PUBLICATION_HEADER = 'X-MRT-Expected-Dataset-Publication-ID';
 const EXPECTED_PREVIEW_HEADER = 'X-MRT-Expected-Preview-Asset-Set-ID';
 const DESCRIPTOR_KEYS = Object.freeze([
@@ -272,13 +284,7 @@ async function verifyCommittedMutationInCatalog({
       }
       const catalogValue = await verifiedFetch({
         url: catalogUrl(baseUrl),
-        init: {
-          method: 'GET',
-          // The Worker's edge cache for this endpoint is per-data-center; this header makes it
-          // read D1 directly regardless of which data center this request lands on, so the tight
-          // retry budget below never races a not-yet-invalidated cache entry on another one.
-          headers: {Accept: 'application/json', 'Cache-Control': 'no-cache'},
-        },
+        init: {method: 'GET', headers: {Accept: 'application/json'}},
         token,
         timeoutMs,
         fetchImpl,

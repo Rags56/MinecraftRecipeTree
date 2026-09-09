@@ -101,7 +101,7 @@ function deepChain(nodeCount) {
 test('lays out a 10,000-node dependency chain without recursive call-stack growth', () => {
   const graph = layoutTree(deepChain(10_000), true);
   assert.equal(graph.nodes.length, 10_000);
-  assert.equal(graph.edges.length, 29_997);
+  assert.equal(graph.edges.length, 9_999);
   assert.equal(graph.maxX - graph.minX, COMPACT_ROOT_SIZE);
   assert.ok(graph.maxY > 900_000);
 });
@@ -126,8 +126,36 @@ test('preserves left-to-right preorder placement and child-to-parent edge orderi
     graph.nodes.map(node => node.item.id),
     ['root', 'left', 'right'],
   );
-  assert.equal(graph.edges.length, 6);
+  assert.equal(graph.edges.length, 2);
   assert.ok(graph.nodes[1].x < graph.nodes[2].x);
+});
+
+test('renders each tree relationship as one direct connector without elbow junctions', () => {
+  const branch = id => ({
+    id,
+    key: `item|test:${id}`,
+    ancestors: [],
+    source: {
+      id: `${id}.source`,
+      kind: 'recipe',
+      inputs: [{id: `${id}-emc`, key: 'emc|projecte:emc', ancestors: []}],
+    },
+  });
+  const root = {
+    id: 'root',
+    key: 'item|test:root',
+    ancestors: [],
+    source: {
+      id: 'root.source',
+      kind: 'recipe',
+      inputs: [branch('bowl'), branch('bento')],
+    },
+  };
+
+  const graph = layoutTree(root);
+  assert.equal(graph.edges.length, 4);
+  assert.ok(graph.edges.every(edge => Number.isFinite(edge.angle)));
+  assert.ok(graph.edges.every(edge => edge.w > edge.h));
 });
 
 test('reserves node space for starting-item controls instead of overlaying the tree', () => {
