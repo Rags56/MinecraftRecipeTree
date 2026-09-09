@@ -1,3 +1,4 @@
+import {AppState} from 'react-native';
 import {Directory, File as NativeFile, Paths} from 'expo-file-system';
 
 const ROOT_DIRECTORY_NAME = 'minecraft-recipe-tree';
@@ -63,6 +64,15 @@ class NativeLocalStorage {
     }, WRITE_DEBOUNCE_MS);
   }
 
+  /** Anything still inside the debounce window is lost if the process dies, and leaving the
+   * foreground is the last moment this is reliably able to run. */
+  flushPending(): void {
+    if (this.flushTimer === null) return;
+    clearTimeout(this.flushTimer);
+    this.flushTimer = null;
+    writeAll(this.data);
+  }
+
   getItem(key: string): string | null {
     return Object.prototype.hasOwnProperty.call(this.data, key) ? this.data[key] : null;
   }
@@ -82,5 +92,9 @@ export function installNativeLocalStoragePolyfill(): void {
   if (typeof globalThis.localStorage !== 'undefined') return;
   // Every existing caller in this codebase only ever uses getItem/setItem/removeItem; this
   // deliberately doesn't implement the rest of the Storage interface (length, clear, key).
-  (globalThis as {localStorage?: unknown}).localStorage = new NativeLocalStorage();
+  const storage = new NativeLocalStorage();
+  (globalThis as {localStorage?: unknown}).localStorage = storage;
+  AppState.addEventListener('change', state => {
+    if (state !== 'active') storage.flushPending();
+  });
 }

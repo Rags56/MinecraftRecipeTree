@@ -27,9 +27,27 @@ function loadAnimateMobs(): boolean {
   }
 }
 
+const ACTIVE_TAB_KEY = 'activeTab';
+
+function isTab(value: unknown): value is Tab {
+  return value === 'items' || value === 'graph' || value === 'mobs';
+}
+
+function loadActiveTab(): Tab | null {
+  try {
+    const saved = globalThis.localStorage?.getItem(ACTIVE_TAB_KEY);
+    return isTab(saved) ? saved : null;
+  } catch (error) {
+    console.error('The last active tab could not be loaded from localStorage.', error);
+    return null;
+  }
+}
+
 interface Ui {
   tab: Tab;
   setTab(t: Tab): void;
+  /** True when this launch resumed the user's last tab, which nothing else may override. */
+  restoredLastTab: boolean;
   /** Item-detail modal stack (navigating between items keeps history). */
   itemStack: string[];
   openItem(key: string): void;
@@ -43,6 +61,8 @@ interface Ui {
   closeGraphTree(id: number): void;
   /** Opens a new tree (appended after the active one) without replacing what's already open. */
   openRecipeInGraph(key: string, ref: RecipeRef, direction?: GraphDirection): void;
+  /** Forgets the recipe a tree was opened with, so clearing it can't be undone by a remount. */
+  clearGraphTreeRecipe(id: number): void;
   /** Hydrates a saved graph as the one open tree, without changing the user's active workspace tab. */
   restoreGraph(key: string, direction: GraphDirection): void;
   changeGraphDirection(id: number, direction: GraphDirection): void;
@@ -54,7 +74,16 @@ interface Ui {
 const UiContext = createContext<Ui | null>(null);
 
 export function UiProvider({children}: {children: React.ReactNode}) {
-  const [tab, setTab] = useState<Tab>('items');
+  const restoredTabRef = useRef(loadActiveTab());
+  const [tab, setTabState] = useState<Tab>(restoredTabRef.current ?? 'items');
+  const setTab = useCallback((next: Tab) => {
+    setTabState(next);
+    try {
+      globalThis.localStorage?.setItem(ACTIVE_TAB_KEY, next);
+    } catch (error) {
+      console.error('The active tab could not be saved to localStorage.', error);
+    }
+  }, []);
   const [itemStack, setItemStack] = useState<string[]>([]);
   const [openGraphTrees, setOpenGraphTrees] = useState<OpenGraphTree[]>([]);
   const [activeGraphTreeId, setActiveGraphTreeId] = useState<number | null>(null);
@@ -109,6 +138,11 @@ export function UiProvider({children}: {children: React.ReactNode}) {
   const setActiveGraphTree = useCallback((id: number) => {
     setActiveGraphTreeId(id);
   }, []);
+  const clearGraphTreeRecipe = useCallback((id: number) => {
+    setOpenGraphTrees(trees =>
+      trees.map(tree => (tree.id === id ? {...tree, recipeRef: null} : tree)),
+    );
+  }, []);
   const closeGraphTree = useCallback((id: number) => {
     setOpenGraphTrees(trees => {
       const next = trees.filter(tree => tree.id !== id);
@@ -134,6 +168,7 @@ export function UiProvider({children}: {children: React.ReactNode}) {
     () => ({
       tab,
       setTab,
+      restoredLastTab: restoredTabRef.current !== null,
       itemStack,
       openItem,
       popItem,
@@ -143,6 +178,7 @@ export function UiProvider({children}: {children: React.ReactNode}) {
       setActiveGraphTree,
       closeGraphTree,
       openRecipeInGraph,
+      clearGraphTreeRecipe,
       restoreGraph,
       changeGraphDirection,
       animateMobs,
@@ -150,11 +186,13 @@ export function UiProvider({children}: {children: React.ReactNode}) {
     }),
     [
       tab,
+      setTab,
       itemStack,
       openGraphTrees,
       activeGraphTreeId,
       setActiveGraphTree,
       closeGraphTree,
+      clearGraphTreeRecipe,
       changeGraphDirection,
       animateMobs,
       openItem,

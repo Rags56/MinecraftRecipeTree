@@ -628,10 +628,12 @@ export function GraphScreen({
   } = useRecipeStages();
   const {
     openRecipeInGraph,
+    clearGraphTreeRecipe,
     restoreGraph,
     openItem,
     tab,
     setTab,
+    restoredLastTab,
     animateMobs,
     changeGraphDirection: changeGraphDirectionForTree,
   } = useUi();
@@ -2075,18 +2077,36 @@ export function GraphScreen({
    * Collapses the whole tree back to just the root, reusing the exact same byproduct-release
    * path a single node's collapse (onItemTap, above) uses -- releaseByproductFulfillments already
    * walks the entire removed subtree, so one call correctly unwinds every descendant's reserved
-   * byproduct credit. Deliberately leaves remembered preferred-source choices untouched, matching
-   * collapseNodeRecipe: clearing the tree isn't the same action as telling the app to forget a
-   * choice (that's unsetNodeRecipe, triggered explicitly per node).
+   * byproduct credit. Descendants keep their remembered preferred sources (that's what makes
+   * re-expanding a branch fast), but the root's own base recipe is forgotten here: it is both
+   * remembered as a favorite and carried on the open tree itself, so leaving either in place
+   * brings the recipe the user just cleared straight back on the next expand or remount.
    */
   const clearAllExpansions = useCallback(() => {
     const currentRoot = rootRef.current;
-    if (!currentRoot?.source) return;
-    releaseByproductFulfillmentsFromSubtree(currentRoot);
+    if (!currentRoot) return;
+    if (currentRoot.source) releaseByproductFulfillmentsFromSubtree(currentRoot);
     currentRoot.source = undefined;
+    currentRoot.deferredRecipeExpansion = undefined;
+    if (preferredSourcesRef.current[currentRoot.key]) {
+      // Local-only removal: forgetting the root here is part of clearing this tree, not the user
+      // un-favoriting the recipe everywhere (that's unsetNodeRecipe, which also syncs the change).
+      const next = {...preferredSourcesRef.current};
+      delete next[currentRoot.key];
+      preferredSourcesRef.current = next;
+      persistPreferredSources(data.descriptor, next);
+      setPreferredSources(next);
+    }
+    clearGraphTreeRecipe(treeId);
     bump();
     needsFitRef.current = true;
-  }, [bump, releaseByproductFulfillmentsFromSubtree]);
+  }, [
+    bump,
+    clearGraphTreeRecipe,
+    data.descriptor,
+    releaseByproductFulfillmentsFromSubtree,
+    treeId,
+  ]);
 
   const unsetNodeRecipe = useCallback(
     (node: ItemTreeNode) => {
@@ -2149,16 +2169,21 @@ export function GraphScreen({
     const session = loadGraphSession(data.descriptor);
     if (!session) return;
     if (graphRecipeRef) return;
+    // A resumed launch already knows which tab the user left off on; only a launch without that
+    // memory should be pulled onto the graph just because a saved tree exists.
+    const focusRestoredGraph = () => {
+      if (!restoredLastTab) setTab('graph');
+    };
     if (graphRootKey) {
       if (session.rootKey !== graphRootKey || session.direction !== graphDirection) return;
       pendingGraphSessionRef.current = session;
       restoringGraphSessionRef.current = true;
-      setTab('graph');
+      focusRestoredGraph();
       return;
     }
     pendingGraphSessionRef.current = session;
     restoringGraphSessionRef.current = true;
-    setTab('graph');
+    focusRestoredGraph();
     restoreGraph(session.rootKey, session.direction);
   }, [
     data.descriptor,
@@ -2167,6 +2192,7 @@ export function GraphScreen({
     graphRootKey,
     recipeImportJob,
     restoreGraph,
+    restoredLastTab,
     setTab,
   ]);
 
@@ -3710,15 +3736,7 @@ export function GraphScreen({
 
       <View style={[styles.controls, graphMenuScaleStyle]}>
         {showGraphControls && (
-          <ScrollView
-            horizontal
-            nestedScrollEnabled
-            showsHorizontalScrollIndicator={false}
-            style={styles.controlOptionsScroller}
-            contentContainerStyle={styles.controlOptions}
-            onScrollBeginDrag={() => onSwipeSuppressChange?.(true)}
-            onScrollEndDrag={() => onSwipeSuppressChange?.(false)}
-            onMomentumScrollEnd={() => onSwipeSuppressChange?.(false)}>
+          <View style={styles.controlOptions}>
             {graphDirection === 'inputs' && (
               <CtrlBtn
                 label="Totals"
@@ -3801,7 +3819,7 @@ export function GraphScreen({
                 onPress={onClose}
               />
             )}
-          </ScrollView>
+          </View>
         )}
         <TouchableOpacity
           {...signalTarget('graph.control.menu')}
@@ -5931,18 +5949,15 @@ const styles = StyleSheet.create({
   rootNodePrimaryActionText: {color: '#0b1610', fontSize: 9, fontWeight: '800'},
   controls: {
     // Anchored as a genuine top bar spanning the available width, not just a top-right corner
-    // box -- the scrollable row below it needs room to actually stay a single row instead of
-    // wrapping into extra rows that a narrow portrait screen then clips.
+    // box -- that width is what lets the options below wrap into extra rows instead of running
+    // off the side of a narrow portrait screen.
     position: 'absolute',
     top: 10,
     left: 10,
     right: 10,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 6,
-  },
-  controlOptionsScroller: {
-    flex: 1,
   },
   layoutFallbackNotice: {
     position: 'absolute',
@@ -6001,7 +6016,9 @@ const styles = StyleSheet.create({
   },
   recipeLookupCancelText: {color: theme.text, fontSize: 13, fontWeight: '700'},
   controlOptions: {
+    flex: 1,
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: 6,
   },
