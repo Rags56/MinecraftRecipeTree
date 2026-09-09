@@ -1,4 +1,4 @@
-import React, {useRef, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {Image, Platform, StyleSheet, Text, View, type ImageErrorEvent} from 'react-native';
 import {useData} from '../data/DataContext';
 import {
@@ -11,6 +11,10 @@ import {
 } from '../data/projecteEmc';
 import {theme} from '../theme';
 import {CatalogItem} from '../types';
+import {
+  itemIconRetryDelayMs,
+  shouldRetryItemIconLoad,
+} from './itemIconRetry';
 import {
   LOGICAL_ITEM_ICON_GRID_SIZE,
   isPixelGridAlignedItemIconSize,
@@ -72,11 +76,31 @@ function UriItemIcon({
   reportFailure,
 }: UriItemIconProps) {
   const [failedUri, setFailedUri] = useState<string | null>(null);
+  // Remounts the Image with the same URI. The URI is content-addressed, so a cache-busting query
+  // is not an option: the service worker matches packed-image coordinates on an exact search
+  // string and would stop recognizing the request.
+  const [attempt, setAttempt] = useState(0);
   const reportedFailure = useRef(false);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (retryTimer.current !== null) clearTimeout(retryTimer.current);
+    },
+    [],
+  );
   if (hasItemIconUriFailed(failedUri, uri)) {
     return <ItemIconFallback colorKey={colorKey} label={label} size={size} />;
   }
   const onError = (event: ImageErrorEvent) => {
+    const attemptsMade = attempt + 1;
+    if (shouldRetryItemIconLoad(attemptsMade)) {
+      retryTimer.current = setTimeout(() => {
+        retryTimer.current = null;
+        setAttempt(attemptsMade);
+      }, itemIconRetryDelayMs(attemptsMade));
+      return;
+    }
+    // Only a load that exhausted its retries is a real failure worth a diagnostic.
     if (!reportedFailure.current) {
       reportedFailure.current = true;
       reportFailure({uri, itemKey, label, detail: event.nativeEvent.error});
@@ -85,6 +109,7 @@ function UriItemIcon({
   };
   return (
     <Image
+      key={attempt}
       source={{uri}}
       style={[{width: size, height: size}, pixelated as object]}
       resizeMode="contain"
