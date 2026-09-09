@@ -22,9 +22,10 @@ import {theme} from '../theme';
 
 const PRODUCTION_ORIGIN = 'https://minecraftrecipetree.craftsmannsoftware.com';
 
-function PackIcon({dataset}: {dataset: DatasetDescriptor}) {
+export function PackIcon({dataset, size = 48}: {dataset: DatasetDescriptor; size?: number}) {
   const [failed, setFailed] = useState(false);
   const path = datasetPackIconPath(dataset.slug);
+  const dimensions = {width: size, height: size};
 
   useEffect(() => {
     if (path !== null || isLocalPackDescriptor(dataset)) return;
@@ -37,11 +38,11 @@ function PackIcon({dataset}: {dataset: DatasetDescriptor}) {
   if (path === null || failed) {
     return (
       <View
-        style={styles.packIconFallback}
+        style={[styles.packIconFallback, dimensions]}
         accessible
         accessibilityRole="image"
         accessibilityLabel={`${dataset.displayName} pack icon unavailable`}>
-        <Text style={styles.packIconFallbackText}>
+        <Text style={[styles.packIconFallbackText, {fontSize: Math.max(10, size * 0.42)}]}>
           {dataset.displayName.trim().charAt(0).toUpperCase() || '?'}
         </Text>
       </View>
@@ -60,7 +61,7 @@ function PackIcon({dataset}: {dataset: DatasetDescriptor}) {
   return (
     <Image
       source={{uri}}
-      style={styles.packIcon}
+      style={[styles.packIcon, dimensions]}
       resizeMode="cover"
       onError={onError}
       accessible

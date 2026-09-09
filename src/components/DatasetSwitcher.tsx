@@ -13,6 +13,7 @@ import {theme} from '../theme';
 import type {Manifest} from '../types';
 import {DisclosureChevron} from './DisclosureChevron';
 import {DatasetDisclaimer} from './DatasetDisclaimer';
+import {PackIcon} from './DatasetPicker';
 
 type CatalogStatus = 'loading' | 'ready' | 'error';
 
@@ -111,6 +112,7 @@ export function DatasetSwitcher({
           ? `Change modpack. Current pack is ${selected.displayName}, version ${selected.packVersion}`
           : 'Choose a modpack'
       }>
+      {selected && <PackIcon dataset={selected} size={22} />}
       <View style={styles.compactDatasetLabel}>
         <Text style={styles.compactDatasetText} numberOfLines={1}>
           {selectedLabel}
@@ -404,6 +406,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
     paddingHorizontal: 28,
     borderRadius: 8,
     borderWidth: 1,
