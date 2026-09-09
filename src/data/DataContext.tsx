@@ -69,6 +69,10 @@ import {
   runtimeDocumentByteLimit,
 } from './runtimeDocumentLimits';
 import {readLocalDatasetDocument} from './localDatasetDocument';
+import {
+  readCachedPublishedDocument,
+  writeCachedPublishedDocument,
+} from './publishedDatasetCache';
 import {localDatasetVisualUri} from './localDatasetVisual';
 
 const SHARDED_JSON_FORMAT = 'mrt-sharded-json-v1';
@@ -236,24 +240,32 @@ class ExportHttpError extends Error {
   }
 }
 
-async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const local = await readLocalDatasetDocument(url);
-  if (local !== null) {
-    try {
-      return JSON.parse(local.text) as T;
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      throw new Error(`Invalid JSON from ${url}: ${detail}`);
-    }
-  }
-  const res = await fetch(url, init);
-  if (!res.ok) throw new ExportHttpError(res.status, url);
+function parseExportJson<T>(text: string, url: string): T {
   try {
-    return (await res.json()) as T;
+    return JSON.parse(text) as T;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(`Invalid JSON from ${url}: ${detail}`);
   }
+}
+
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const local = await readLocalDatasetDocument(url);
+  if (local !== null) return parseExportJson<T>(local.text, url);
+  // A caller passing cache: 'no-store' wants a genuinely fresh read (only the manifest fetches
+  // do this, to reconfirm identity after the rest of a dataset's documents load); respect that
+  // over this native-only persistent cache the same way it already bypasses the network's own.
+  const bypassCache = init?.cache === 'no-store';
+  if (!bypassCache) {
+    const cached = await readCachedPublishedDocument(url);
+    if (cached !== null) return parseExportJson<T>(cached.text, url);
+  }
+  const res = await fetch(url, init);
+  if (!res.ok) throw new ExportHttpError(res.status, url);
+  const text = await res.text();
+  const parsed = parseExportJson<T>(text, url);
+  if (!bypassCache) void writeCachedPublishedDocument(url, text);
+  return parsed;
 }
 
 async function fetchBoundedJson(
@@ -267,10 +279,17 @@ async function fetchBoundedJson(
     source = local.text;
     bytes = local.bytes;
   } else {
-    const res = await fetch(url);
-    if (!res.ok) throw new ExportHttpError(res.status, url);
-    source = await res.text();
-    bytes = UTF8_ENCODER.encode(source).byteLength;
+    const cached = await readCachedPublishedDocument(url);
+    if (cached !== null) {
+      source = cached.text;
+      bytes = cached.bytes;
+    } else {
+      const res = await fetch(url);
+      if (!res.ok) throw new ExportHttpError(res.status, url);
+      source = await res.text();
+      bytes = UTF8_ENCODER.encode(source).byteLength;
+      void writeCachedPublishedDocument(url, source);
+    }
   }
   const maximumBytes = runtimeDocumentByteLimit(url);
   if (bytes > maximumBytes) {
