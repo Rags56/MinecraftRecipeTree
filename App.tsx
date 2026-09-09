@@ -479,6 +479,7 @@ function Shell({
   const {tab, setTab, openGraphTrees, activeGraphTreeId} = ui;
   const activeGraphTree = openGraphTrees.find(tree => tree.id === activeGraphTreeId) ?? null;
   const graphTreeScrollRef = useRef<ScrollView>(null);
+  const [graphTreePagerSuppressed, setGraphTreePagerSuppressed] = useState(false);
   const {width} = useWindowDimensions();
   const [hasHydrated, setHasHydrated] = useState(Platform.OS !== 'web');
   const compactHeader = hasHydrated && width < 720;
@@ -971,6 +972,11 @@ function Shell({
                 ref={graphTreeScrollRef}
                 horizontal
                 pagingEnabled
+                // A single open tree has nothing to page to, so leaving this enabled would only
+                // let it fight the tree's own pan-to-scroll and control-row scrolling for every
+                // horizontal drag. With more than one tree open, onSwipeSuppressChange below
+                // still blocks it for the duration of a drag that's actually inside the tree.
+                scrollEnabled={openGraphTrees.length > 1 && !graphTreePagerSuppressed}
                 showsHorizontalScrollIndicator={false}
                 style={styles.graphTreeScroller}
                 onMomentumScrollEnd={event => {
@@ -1015,6 +1021,11 @@ function Shell({
                           showGraphControls={showGraphControls}
                           onToggleGraphControls={() =>
                             setShowGraphControls(value => !value)
+                          }
+                          onSwipeSuppressChange={
+                            tree.id === activeGraphTreeId
+                              ? setGraphTreePagerSuppressed
+                              : undefined
                           }
                           recipeImportRequestId={recipeImportRequestId}
                           onRecipeImportRequestHandled={() => setRecipeImportRequestId(0)}

@@ -524,10 +524,12 @@ function loadRadialLayout(): boolean {
       storage?.setItem(RADIAL_LAYOUT_KEY, legacyPacked);
       return legacyPacked !== '0';
     }
-    return true;
+    // Default off: Unique mode is the recommended default and reads best in the plain
+    // (non-radial) layout.
+    return false;
   } catch (error) {
     console.error('Radial graph layout could not be loaded from localStorage.', error);
-    return true;
+    return false;
   }
 }
 
@@ -578,6 +580,7 @@ export function GraphScreen({
   onContentZoomComplete,
   showGraphControls,
   onToggleGraphControls,
+  onSwipeSuppressChange,
   recipeImportRequestId = 0,
   onRecipeImportRequestHandled,
   recipeImportJob = null,
@@ -605,6 +608,8 @@ export function GraphScreen({
   onContentZoomComplete?: (value: number) => void;
   showGraphControls: boolean;
   onToggleGraphControls(): void;
+  /** While true, the enclosing multi-tree pager must not swipe — a drag inside this tree is active. */
+  onSwipeSuppressChange?: (suppressed: boolean) => void;
   recipeImportRequestId?: number;
   onRecipeImportRequestHandled?: () => void;
   recipeImportJob?: {id: number; raw: string} | null;
@@ -3305,6 +3310,7 @@ export function GraphScreen({
           Math.abs(g.dx) + Math.abs(g.dy) > 6 || g.numberActiveTouches === 2,
         onPanResponderGrant: (_event, gesture) => {
           clearWebSelection();
+          onSwipeSuppressChange?.(true);
           panOrigin.current = capturePanGestureOrigin(
             transformRef.current,
             gesture.dx,
@@ -3347,14 +3353,16 @@ export function GraphScreen({
           panOrigin.current = null;
           pinchDist.current = 0;
           pinching.current = false;
+          onSwipeSuppressChange?.(false);
         },
         onPanResponderTerminate: () => {
           panOrigin.current = null;
           pinchDist.current = 0;
           pinching.current = false;
+          onSwipeSuppressChange?.(false);
         },
       }),
-    [applyTransform, clearWebSelection, zoomAt],
+    [applyTransform, clearWebSelection, onSwipeSuppressChange, zoomAt],
   );
 
   if (!graphRootKey || !root) {
@@ -3704,9 +3712,13 @@ export function GraphScreen({
         {showGraphControls && (
           <ScrollView
             horizontal
+            nestedScrollEnabled
             showsHorizontalScrollIndicator={false}
             style={styles.controlOptionsScroller}
-            contentContainerStyle={styles.controlOptions}>
+            contentContainerStyle={styles.controlOptions}
+            onScrollBeginDrag={() => onSwipeSuppressChange?.(true)}
+            onScrollEndDrag={() => onSwipeSuppressChange?.(false)}
+            onMomentumScrollEnd={() => onSwipeSuppressChange?.(false)}>
             {graphDirection === 'inputs' && (
               <CtrlBtn
                 label="Totals"
