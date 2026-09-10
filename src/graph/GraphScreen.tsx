@@ -1231,7 +1231,7 @@ export function GraphScreen({
 
   /** Replace every eligible occurrence with the newly preferred source. */
   const applyPreferredSourceAcrossTree = useCallback(
-    (target: ItemTreeNode, choice: SourceChoice) => {
+    (target: ItemTreeNode, choice: SourceChoice, expansionBudget?: ExpansionBudget) => {
       const currentRoot = rootRef.current;
       const matches = preferredSourceTargets(currentRoot, target);
       for (const match of matches) {
@@ -1239,7 +1239,11 @@ export function GraphScreen({
         match.source = undefined;
       }
       for (const match of matches) {
-        applyChoiceRef.current?.(match, choice);
+        // Each occurrence gets its own budget: they sit at different depths, and one shared
+        // allowance would let the first match spend everything the rest needed.
+        applyChoiceRef.current?.(match, choice, {
+          expansionBudget: expansionBudget && new ExpansionBudget(undefined, match.ancestors.length),
+        });
       }
     },
     [],
@@ -1966,9 +1970,9 @@ export function GraphScreen({
   );
 
   const applyOnlyChoice = useCallback(
-    async (node: ItemTreeNode, choice: SourceChoice) => {
+    async (node: ItemTreeNode, choice: SourceChoice, expansionBudget?: ExpansionBudget) => {
       if (graphDirection === 'outputs') {
-        applyChoice(node, choice);
+        applyChoice(node, choice, {expansionBudget});
         return;
       }
       if (choice.t === 'recipe') {
@@ -1987,7 +1991,7 @@ export function GraphScreen({
         }
       }
       setPreferredSource(node.key, choice);
-      applyPreferredSourceAcrossTree(node, choice);
+      applyPreferredSourceAcrossTree(node, choice, expansionBudget);
     },
     [
       applyChoice,
@@ -2000,13 +2004,23 @@ export function GraphScreen({
     ],
   );
 
+  /**
+   * Expanding a node follows its remembered recipes downward, and that cascade was unbounded:
+   * one tap on a node deep in a pack like GT New Horizons could unfold thousands of nodes at
+   * once. Every user-initiated expansion now gets its own budget, measured from that node.
+   */
+  const budgetFor = useCallback(
+    (node: ItemTreeNode) => new ExpansionBudget(undefined, node.ancestors.length),
+    [],
+  );
+
   const applyOnlyChoiceWithErrorHandling = useCallback(
     (node: ItemTreeNode, choice: SourceChoice) => {
-      void applyOnlyChoice(node, choice).catch(error => {
+      void applyOnlyChoice(node, choice, budgetFor(node)).catch(error => {
         console.error('The only recipe source could not be classified and applied.', error);
       });
     },
-    [applyOnlyChoice],
+    [applyOnlyChoice, budgetFor],
   );
 
   const releaseByproductFulfillmentsFromSubtree = useCallback(
@@ -2077,8 +2091,29 @@ export function GraphScreen({
     ],
   );
 
+  /**
+   * Expanding or collapsing a node re-lays out the whole tree, and the canvas transform is
+   * unchanged, so every other node slides to a new position underneath the user. Pinning the
+   * node they touched keeps the tree still around the one thing they were looking at.
+   */
+  const anchorNodeRef = useRef<{id: string; screenX: number; screenY: number} | null>(null);
+  const pinNodePosition = useCallback((node: ItemTreeNode) => {
+    const laid = graphRef.current?.nodes.find(candidate => candidate.item.id === node.id);
+    if (!laid) {
+      anchorNodeRef.current = null;
+      return;
+    }
+    const {x, y, scale} = transformRef.current;
+    anchorNodeRef.current = {
+      id: node.id,
+      screenX: x + (laid.x + laid.w / 2) * scale,
+      screenY: y + (laid.y + laid.h / 2) * scale,
+    };
+  }, []);
+
   const onItemTap = useCallback(
     (node: ItemTreeNode) => {
+      pinNodePosition(node);
       if (node.loading) return;
       if (blockRecursiveExpansion(node, 'tap graph node')) return;
       if (node.deferredRecipeExpansion) {
@@ -2113,7 +2148,7 @@ export function GraphScreen({
       if (choices.length === 0) return;
       const preferred = preferredSourceFor(node.key, node.alternatives);
       if (preferred) {
-        applyChoice(node, preferred);
+        applyChoice(node, preferred, {expansionBudget: budgetFor(node)});
       } else if (choices.length === 1) {
         applyOnlyChoiceWithErrorHandling(node, choices[0]);
       } else {
@@ -2123,6 +2158,8 @@ export function GraphScreen({
     [
       bump,
       applyChoice,
+      budgetFor,
+      pinNodePosition,
       openPickerWithErrorHandling,
       choicesFor,
       preferredSourceFor,
@@ -2330,7 +2367,7 @@ export function GraphScreen({
       if (graphDirection === 'inputs') {
         setPreferredSource(graphRootKey, requestedChoice);
       }
-      applyChoice(newRoot, requestedChoice, {expansionBudget: new ExpansionBudget()});
+      applyChoice(newRoot, requestedChoice, {expansionBudget: budgetFor(newRoot)});
       return;
     }
     // An imported tree owns this fresh root. Its selections are resolved and
@@ -2339,7 +2376,7 @@ export function GraphScreen({
     const choices = choicesFor(graphRootKey);
     const preferred = preferredSourceFor(graphRootKey);
     if (preferred) {
-      applyChoice(newRoot, preferred, {expansionBudget: new ExpansionBudget()});
+      applyChoice(newRoot, preferred, {expansionBudget: budgetFor(newRoot)});
     } else if (choices.length === 1) {
       const onlyChoice = choices[0];
       applyOnlyChoiceWithErrorHandling(newRoot, onlyChoice);
@@ -3101,8 +3138,22 @@ export function GraphScreen({
   useEffect(() => {
     if (needsFitRef.current && fitView()) {
       needsFitRef.current = false;
+      anchorNodeRef.current = null;
+      return;
     }
-  }, [graph, fitView]);
+    // Runs after the relayout the tap caused: shift the canvas by however far the pinned node
+    // moved, so it ends up back under the finger and the rest of the tree moves around it.
+    const pinned = anchorNodeRef.current;
+    anchorNodeRef.current = null;
+    if (!pinned || !graph) return;
+    const laid = graph.nodes.find(candidate => candidate.item.id === pinned.id);
+    if (!laid) return;
+    const current = transformRef.current;
+    const nextX = pinned.screenX - (laid.x + laid.w / 2) * current.scale;
+    const nextY = pinned.screenY - (laid.y + laid.h / 2) * current.scale;
+    if (Math.abs(nextX - current.x) < 0.5 && Math.abs(nextY - current.y) < 0.5) return;
+    applyTransform({...current, x: nextX, y: nextY});
+  }, [applyTransform, graph, fitView]);
 
   const recenterOnGraphPoint = useCallback(
     (graphPoint: {x: number; y: number}) => {
@@ -3111,6 +3162,17 @@ export function GraphScreen({
       applyTransform(transformCenteredOn(graphPoint, transformRef.current, vp));
     },
     [applyTransform],
+  );
+  // Stable identity, or the memo on the overview cannot hold across a pan.
+  // graphMenuScaleStyle itself is declared past the empty-tree return, so the same zoom is
+  // derived here rather than referenced.
+  const minimapStyle = useMemo(
+    () =>
+      [
+        styles.minimap,
+        Platform.OS === 'web' ? ({zoom: interfaceZoom} as unknown as object) : null,
+      ] as unknown as object,
+    [interfaceZoom],
   );
   const minimapVisible = useMemo(
     () => (graph ? shouldShowMinimap(graph, viewportSize, transform) : false),
@@ -4288,7 +4350,7 @@ export function GraphScreen({
           transform={transform}
           viewport={viewportSize}
           onRecenter={recenterOnGraphPoint}
-          style={[styles.minimap, graphMenuScaleStyle] as object}
+          style={minimapStyle}
         />
       )}
       {Platform.OS !== 'web' && (
@@ -4529,7 +4591,7 @@ export function GraphScreen({
             }
             if (p.direction === 'outputs') {
               p.target.source = undefined;
-              applyChoice(p.target, choice);
+              applyChoice(p.target, choice, {expansionBudget: budgetFor(p.target)});
               return;
             }
             if (p.target.source) {
@@ -4546,10 +4608,10 @@ export function GraphScreen({
             }
             setPreferredSource(p.target.key, p.rememberSource ? choice : null);
             if (p.rememberSource) {
-              applyPreferredSourceAcrossTree(p.target, choice);
+              applyPreferredSourceAcrossTree(p.target, choice, budgetFor(p.target));
               return;
             }
-            applyChoice(p.target, choice);
+            applyChoice(p.target, choice, {expansionBudget: budgetFor(p.target)});
           }}
         />
       )}

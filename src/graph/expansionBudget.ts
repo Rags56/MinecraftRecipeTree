@@ -40,12 +40,22 @@ export class ExpansionBudget {
   private expandedParents = 0;
   private children = 0;
   private readonly nodeBudget: number;
+  private readonly baseDepth: number;
 
-  constructor(nodeBudget: number = DEFAULT_EXPANSION_NODE_BUDGET) {
+  /**
+   * `baseDepth` is where this cascade starts, which is not the tree root once the user expands a
+   * node part way down: depth arrives measured from the root, and comparing that against a limit
+   * meant to describe levels below the tapped node would refuse to expand anything at all.
+   */
+  constructor(nodeBudget: number = DEFAULT_EXPANSION_NODE_BUDGET, baseDepth = 0) {
     if (!Number.isFinite(nodeBudget) || nodeBudget < 1) {
       throw new Error(`Auto expand node budget must be at least 1, got ${nodeBudget}.`);
     }
+    if (!Number.isSafeInteger(baseDepth) || baseDepth < 0) {
+      throw new Error(`Auto expand base depth must be a non-negative integer, got ${baseDepth}.`);
+    }
     this.nodeBudget = nodeBudget;
+    this.baseDepth = baseDepth;
   }
 
   /** Average children per expanded parent, which is the tree's observed width. */
@@ -72,6 +82,6 @@ export class ExpansionBudget {
       throw new Error(`Expansion depth must be a non-negative integer, got ${depth}.`);
     }
     if (this.expandedNodes >= this.nodeBudget) return false;
-    return depth < this.depthLimit;
+    return depth - this.baseDepth < this.depthLimit;
   }
 }

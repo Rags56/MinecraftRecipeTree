@@ -71,3 +71,24 @@ test('rejects counts and depths that cannot describe an expansion', () => {
   assert.throws(() => budget.record(1.5), /non-negative integer/u);
   assert.throws(() => budget.allowsDepth(-1), /non-negative integer/u);
 });
+
+test('measures depth from where the cascade started, not from the tree root', () => {
+  // Expanding a node six levels down must still get its own levels below it, not be refused
+  // because the depth it reports already exceeds a limit describing relative levels.
+  const budget = new ExpansionBudget(160, 6);
+  budget.record(4);
+  assert.equal(budget.depthLimit, 3);
+  assert.equal(budget.allowsDepth(7), true);
+  assert.equal(budget.allowsDepth(8), true);
+  assert.equal(budget.allowsDepth(9), false);
+  // The same cascade at the root allows the same number of levels.
+  const atRoot = new ExpansionBudget(160, 0);
+  atRoot.record(4);
+  assert.equal(atRoot.allowsDepth(2), true);
+  assert.equal(atRoot.allowsDepth(3), false);
+});
+
+test('rejects a base depth that cannot describe a node', () => {
+  assert.throws(() => new ExpansionBudget(160, -1), /non-negative integer/u);
+  assert.throws(() => new ExpansionBudget(160, 1.5), /non-negative integer/u);
+});
