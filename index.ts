@@ -3,11 +3,12 @@ import 'expo-sqlite/localStorage/install';
 
 import { registerRootComponent } from 'expo';
 
-import { installNativeLocalStoragePolyfill } from './src/ui/nativeLocalStorage';
+import { migrateLegacyNativeLocalStorage } from './src/ui/nativeLocalStorage';
 
-// Must run before App (and everything it imports, like theme/zoom preferences and the graph
-// session) so their first localStorage read on native sees the polyfill already installed.
-installNativeLocalStoragePolyfill();
+// Must run after the SQLite-backed localStorage above is installed and before App (and everything
+// it imports, like theme/zoom preferences and the graph session) first reads it, so state saved by
+// builds that used the older JSON-file polyfill is already in place by the time anything asks.
+migrateLegacyNativeLocalStorage();
 
 import App from './App';
 

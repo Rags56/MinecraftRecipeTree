@@ -1,4 +1,5 @@
 /**
- * Web already has a real localStorage; this is a no-op there. See nativeLocalStorage.native.ts.
+ * Web has always had a real localStorage and never ran the native JSON-file polyfill, so there is
+ * nothing to migrate here. See nativeLocalStorage.native.ts.
  */
-export function installNativeLocalStoragePolyfill(): void {}
+export function migrateLegacyNativeLocalStorage(): void {}

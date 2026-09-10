@@ -30,7 +30,9 @@ function loadAnimateMobs(): boolean {
 const ACTIVE_TAB_KEY = 'activeTab';
 
 function isTab(value: unknown): value is Tab {
-  return value === 'items' || value === 'graph' || value === 'mobs';
+  return (
+    value === 'items' || value === 'graph' || value === 'mobs' || value === 'settings'
+  );
 }
 
 function loadActiveTab(): Tab | null {
