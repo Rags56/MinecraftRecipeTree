@@ -110,8 +110,6 @@ test('a phone reaches the graph options through an overlay, not a bar on the can
   assert.match(source, /\{showGraphControls && Platform\.OS === 'web' && \(/u);
   assert.match(source, /showMoreControls && Platform\.OS === 'web' && \(/u);
   assert.match(source, /Platform\.OS !== 'web' && \(\s*<GraphSettingsSheet/u);
-  // Totals outlive the sheet on a phone: it is dismissed before the panel is looked at.
-  assert.match(source, /\(Platform\.OS !== 'web' \|\| showGraphControls\) &&/u);
 });
 
 test('every GraphScreen hook runs before its empty-tree return', () => {

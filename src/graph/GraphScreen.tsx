@@ -436,7 +436,6 @@ const COMPACT_MODE_KEY = 'graphCompactMode';
 const RADIAL_LAYOUT_KEY = 'graphRadialLayout';
 const LEGACY_PACKED_LAYOUT_KEY = 'graphPackedLayout';
 const USE_BYPRODUCTS_KEY = 'graphUseByproducts';
-const TREE_TOTALS_KEY = 'graphTreeTotals';
 /** Distance from the canvas top to the controls bar; panels below it clear it by measurement. */
 const CONTROLS_TOP_INSET = 10;
 const CANVAS_EDGE_INSET = 10;
@@ -561,17 +560,6 @@ function loadFocusMode(): boolean {
     return globalThis.localStorage?.getItem(FOCUS_MODE_KEY) === '1';
   } catch (error) {
     console.error('Focus mode preference could not be loaded from localStorage.', error);
-    return false;
-  }
-}
-
-function loadShowTreeTotals(): boolean {
-  try {
-    // Defaults off: opening the graph controls should reveal the controls, not immediately bury
-    // them and most of a phone screen under a panel the user did not ask for.
-    return globalThis.localStorage?.getItem(TREE_TOTALS_KEY) === '1';
-  } catch (error) {
-    console.error('Tree totals preference could not be loaded from localStorage.', error);
     return false;
   }
 }
@@ -738,7 +726,6 @@ export function GraphScreen({
   const recipeImportRestoreAttemptedRef = useRef<number | null>(null);
   const [compactMode, setCompactMode] = useState(loadCompactMode);
   const [radialLayout, setRadialLayout] = useState(loadRadialLayout);
-  const [showTreeTotals, setShowTreeTotals] = useState(loadShowTreeTotals);
   // The controls wrap onto as many rows as the screen width forces, so the panels below them
   // cannot assume a fixed single-row height without ending up underneath the buttons.
   const [controlsHeight, setControlsHeight] = useState(0);
@@ -3198,22 +3185,6 @@ export function GraphScreen({
     });
   }, [applyTransform]);
 
-  const toggleTreeTotals = useCallback(() => {
-    setShowTreeTotals(current => {
-      const next = !current;
-      try {
-        const storage = globalThis.localStorage;
-        if (storage) storage.setItem(TREE_TOTALS_KEY, next ? '1' : '0');
-        else if (Platform.OS === 'web') {
-          console.warn('Tree totals are using memory only because localStorage is unavailable.');
-        }
-      } catch (error) {
-        console.error('Tree totals preference could not be saved to localStorage.', error);
-      }
-      return next;
-    });
-  }, []);
-
   const toggleFocusMode = useCallback(() => {
     setFocusModeEnabled(current => {
       const next = !current;
@@ -3637,13 +3608,13 @@ export function GraphScreen({
     const options: GraphSettingOption[] = [];
     if (graphDirection === 'inputs') {
       options.push({
-        key: 'totals',
-        label: 'Tree totals',
-        description: 'Every raw material this tree needs, as a panel on the canvas',
+        key: 'use-byproducts',
+        label: 'Use byproducts',
+        description: 'Count what a recipe returns against what the tree still needs',
         kind: 'toggle',
-        active: showTreeTotals,
-        metricsId: 'graph.control.totals',
-        onPress: toggleTreeTotals,
+        active: useByproducts,
+        metricsId: 'graph.totals.use-byproducts',
+        onPress: () => updateUseByproducts(!useByproducts),
       });
     }
     options.push(
@@ -3700,6 +3671,25 @@ export function GraphScreen({
     }
     options.push(
       {
+        key: 'export-png',
+        label: exportingTree ? 'Export HQ PNG · Rendering…' : 'Export HQ PNG',
+        description:
+          Platform.OS === 'web'
+            ? 'Render the whole tree as a high-resolution image'
+            : 'Available in the web viewer',
+        kind: 'action',
+        metricsId: 'graph.totals.export-png',
+        onPress: exportingTree ? () => {} : closeAfter(() => void exportTreeImage()),
+      },
+      {
+        key: 'export-csv',
+        label: 'Export resources CSV',
+        description: 'Every raw material this tree needs, as a spreadsheet',
+        kind: 'action',
+        metricsId: 'graph.totals.export-csv',
+        onPress: closeAfter(exportTotals),
+      },
+      {
         key: 'share',
         label: 'Share this tree',
         description: 'Send the tree as a file, or open one you were sent',
@@ -3743,13 +3733,16 @@ export function GraphScreen({
     onClose,
     onToggleGraphControls,
     openTreeCount,
+    exportTotals,
+    exportTreeImage,
+    exportingTree,
     radialLayout,
-    showTreeTotals,
     toggleCommunityAutoExpand,
     toggleCompactMode,
     toggleRadialLayout,
-    toggleTreeTotals,
     updateExpandRecipesOnce,
+    updateUseByproducts,
+    useByproducts,
   ]);
 
   if (!graphRootKey || !root) {
@@ -4104,16 +4097,6 @@ export function GraphScreen({
         }}>
         {showGraphControls && Platform.OS === 'web' && (
           <View style={styles.controlOptions}>
-            {graphDirection === 'inputs' && (
-              <CtrlBtn
-                label="Totals"
-                expanded={showTreeTotals}
-                accessibilityLabel={showTreeTotals ? 'Collapse tree totals' : 'Expand tree totals'}
-                metricsId="graph.control.totals"
-                active={showTreeTotals}
-                onPress={toggleTreeTotals}
-              />
-            )}
             <CtrlBtn
               label="Radial"
               metricsId="graph.control.radial"
@@ -4232,6 +4215,38 @@ export function GraphScreen({
               onPress={() => void toggleCommunityAutoExpand()}
             />
           )}
+          {graphDirection === 'inputs' && (
+            <CtrlBtn
+              label="Use byproducts"
+              accessibilityLabel={
+                useByproducts
+                  ? 'Stop counting byproducts against what the tree needs'
+                  : 'Count byproducts against what the tree needs'
+              }
+              metricsId="graph.totals.use-byproducts"
+              active={useByproducts}
+              onPress={() => updateUseByproducts(!useByproducts)}
+            />
+          )}
+          <CtrlBtn
+            label={exportingTree ? 'Rendering…' : 'Export HQ PNG'}
+            accessibilityLabel="Export the tree as a high-resolution image"
+            metricsId="graph.totals.export-png"
+            onPress={() => {
+              if (exportingTree) return;
+              setShowMoreControls(false);
+              void exportTreeImage();
+            }}
+          />
+          <CtrlBtn
+            label="Export resources CSV"
+            accessibilityLabel="Export every raw material this tree needs as a spreadsheet"
+            metricsId="graph.totals.export-csv"
+            onPress={() => {
+              setShowMoreControls(false);
+              exportTotals();
+            }}
+          />
           <CtrlBtn
             label="Share"
             metricsId="graph.control.share"
@@ -4327,6 +4342,16 @@ export function GraphScreen({
         onPress={fitView}>
         <Text style={[styles.ctrlBtnText, styles.fitControlIcon]}>⛶</Text>
       </TouchableOpacity>
+      {exportMessage && (
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel={`${exportMessage}. Dismiss.`}
+          style={[styles.exportNotice, bottomNoticeStyle, graphMenuScaleStyle]}
+          onPress={() => setExportMessage(null)}>
+          <Text style={[styles.exportNoticeText, noSelect]}>{exportMessage}</Text>
+          <Text style={[styles.exportNoticeDismiss, noSelect]}>✕</Text>
+        </TouchableOpacity>
+      )}
       {focus && (
         <TouchableOpacity
           {...signalTarget('graph.focus.clear')}
@@ -4358,25 +4383,6 @@ export function GraphScreen({
           visible={showGraphControls}
           options={graphSettingOptions}
           onClose={onToggleGraphControls}
-        />
-      )}
-      {/* On web the panel belongs to the controls bar that opened it; on a phone the sheet has
-          already been dismissed by the time the panel is wanted. */}
-      {(Platform.OS !== 'web' || showGraphControls) &&
-        graphDirection === 'inputs' &&
-        showTreeTotals && (
-        <TreeTotalsPanel
-          interfaceZoom={interfaceZoom}
-          top={controlsHeight > 0 ? CONTROLS_TOP_INSET + controlsHeight + 6 : undefined}
-          totals={treeTotals}
-          useByproducts={useByproducts}
-          exportingTree={exportingTree}
-          exportMessage={exportMessage}
-          onUseByproductsChange={updateUseByproducts}
-          onExportTotals={exportTotals}
-          onExportTree={() => void exportTreeImage()}
-          onIngredientTap={handleTreeTotalIngredientTap}
-          onOpenItem={openItem}
         />
       )}
       {pickerLookup && (
@@ -4809,6 +4815,11 @@ function AttachedRootActions({
   );
 }
 
+/**
+ * Unreferenced on purpose: the canvas panel and its toggle were removed when the totals controls
+ * were split into standalone settings, and totals are moving to a tab of their own. Kept because
+ * that tab needs exactly this rendering, along with TreeTotalsSection below.
+ */
 function TreeTotalsPanel({
   interfaceZoom,
   top,
@@ -6679,6 +6690,26 @@ const styles = StyleSheet.create({
     borderColor: theme.accent,
     backgroundColor: 'rgba(23,29,38,0.97)',
   },
+  /** Export results used to be reported inside the totals panel, which no longer exists. */
+  exportNotice: {
+    position: 'absolute',
+    left: BOTTOM_NOTICE_LEFT_INSET,
+    right: CANVAS_EDGE_INSET,
+    bottom: CANVAS_EDGE_INSET,
+    zIndex: 25,
+    maxWidth: 420,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minHeight: Platform.OS === 'web' ? 32 : 44,
+    paddingHorizontal: 11,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.borderLight,
+    backgroundColor: 'rgba(23,29,38,0.97)',
+  },
+  exportNoticeText: {color: theme.text, fontSize: 11, lineHeight: 15, flex: 1},
+  exportNoticeDismiss: {color: theme.textDim, fontSize: 12, fontWeight: '700'},
   settingsGearIcon: {fontSize: 19, lineHeight: 22},
   focusChipText: {color: theme.text, fontSize: 12, fontWeight: '700', flexShrink: 1},
   focusChipClear: {color: theme.accent, fontSize: 11, fontWeight: '700'},

@@ -71,7 +71,12 @@ test('interface zoom scales graph menu chrome without scaling the graph canvas',
     graphScreenSource,
     /style=\{\[styles\.ctrlBtn, styles\.fitControl, graphMenuScaleStyle(?:,|\])/u,
   );
-  assert.match(graphScreenSource, /interfaceZoom=\{interfaceZoom\}[\s\S]*?totals=\{treeTotals\}/u);
+  // The totals panel used to stand in for zoomed chrome here; it moved out of the canvas when
+  // its controls were split into standalone settings, so a notice that is still on it is used.
+  assert.match(
+    graphScreenSource,
+    /style=\{\[styles\.exportNotice, bottomNoticeStyle, graphMenuScaleStyle\]\}/u,
+  );
   assert.match(
     graphScreenSource,
     /style=\{\[styles\.recipeLookupCard, graphMenuScaleStyle\]\}/u,
