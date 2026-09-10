@@ -103,7 +103,8 @@ public final class ExportEvents {
 
     /**
      * Headless/CI mode: launch with -Djeiexport.auto=all|items|recipes|mobs|blockdrops|trades (and optionally
-     * -Djeiexport.iconScale=N) to start an export automatically shortly after world load.
+     * -Djeiexport.iconScale=N and -Djeiexport.speed=1..3) to start an export
+     * automatically shortly after world load.
      */
     private static void maybeAutoStart() {
         if (autoStartAttempted || ticksInLevel < AUTO_START_DELAY_TICKS) {
@@ -138,7 +139,9 @@ public final class ExportEvents {
                 "jeiexport.iconScale", ExportManifestContract.DEFAULT_ICON_SCALE);
         try {
             ExportJob.start(JeiExportPlugin.runtime(), phases, iconScale);
-            ExportJob.chat("Auto-export started (" + phases + ", icon scale " + iconScale + ")", ChatFormatting.GREEN);
+            ExportJob.chat("Automatic export started at speed " + ExportJob.speed()
+                    + " (" + ExportPacing.label(ExportJob.speed()) + ").",
+                    ChatFormatting.GREEN);
         } catch (Exception e) {
             JeiExportMod.LOGGER.error("Auto-export failed to start", e);
         }

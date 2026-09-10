@@ -1,0 +1,7 @@
+{
+  "button.jeiexport.open_jei": "Open JEI",
+  "button.jeiexport.save_plan": "Save plan",
+  "key.categories.jeiexport": "Recipe Tree",
+  "key.jeiexport.open_recipe_tree": "Open recipe tree for held/hovered item",
+  "screen.jeiexport.recipe_tree": "Recipe Tree Planner"
+}

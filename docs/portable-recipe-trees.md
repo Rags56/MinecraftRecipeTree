@@ -27,16 +27,19 @@ Histories are limited to 1 MiB, 2,048 selected sources, and 64 levels. The selec
 must match every pack identity field carried by the history, including its exact publication or pack
 version when present. Recipes are also resolved by stable identity.
 
-## Minecraft 1.20.1 mod
+## Minecraft 1.20.1 and 1.21.1 mods
 
-The recipe-tree screen has a **Share** button.
+Choose **Import / Export** on the recipe-tree screen.
 
-- **Share** copies the active tree-history snapshot to the system clipboard and writes
-  `config/recipe-tree-shares/current-tree-history.mrtree.json`.
-- Histories with multiple starting outputs include each independent root and its selected recipe
-  branches in the same file.
-- The confirmation screen tells the sender where the recipient should paste the history on the site
-  and identifies the launcher-resolved pack version they must select.
+- **Export primary tree** copies the primary tree to the clipboard and saves a uniquely named
+  `.mrtree.json` in `config/recipe-tree-shares/`. Other starting outputs remain in local history.
+- Import explicitly from clipboard JSON or a listed file. Imports reject malformed paths,
+  duplicate selections, invalid UTF-8, symbolic links, and documents larger than 1 MiB.
+- **Save snapshot version** preserves an immutable baseline and selects a working version for edits.
+- Modern mod-to-mod shares preserve reusable inputs in the optional `reusableInputs` path list.
+  The web viewer uses the recipe selections; it does not apply that optional mod-only field.
+- History and last-viewed trees are scoped to each world/server. Legacy unscoped history remains
+  preserved in the local state file rather than appearing in unrelated worlds.
 
 The in-game viewer currently imports ingredient-directed trees. Mob-drop and mining sources from a
 web tree are left collapsed because the JEI planner does not represent those as recipe pages.

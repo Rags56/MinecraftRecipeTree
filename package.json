@@ -11,7 +11,11 @@
     "expo-document-picker": "~56.0.4",
     "expo-file-system": "~56.0.8",
     "expo-haptics": "~56.0.3",
+    "expo-secure-store": "~56.0.4",
+    "expo-sharing": "~56.0.26",
+    "expo-sqlite": "~56.0.6",
     "expo-status-bar": "~56.0.4",
+    "expo-web-browser": "~56.0.6",
     "fflate": "0.7.4",
     "html-to-image": "^1.11.13",
     "jose": "^6.2.10",
@@ -96,7 +100,9 @@
     "test:recipe-stages": "node --test src/data/recipeStagePreferences.test.mjs src/data/recipeStages.test.mjs",
     "generate:recipe-stage-index": "node scripts/generate-meatballcraft-recipe-stage-index.mjs",
     "db:generate": "drizzle-kit generate",
-    "sample-data": "node scripts/make-sample-data.mjs"
+    "sample-data": "node scripts/make-sample-data.mjs",
+    "ios:nemo": "expo run:ios --device Nemo --configuration Release",
+    "test:ios": "node --test src/native/packDownload.test.mjs src/account/authRedirect.test.mjs src/graph/recipeHistory.test.mjs src/graph/graphSession.test.mjs src/ui/deferredSurfaces.test.mjs src/ui/nativeScaling.test.mjs"
   },
   "private": true,
   "type": "module"

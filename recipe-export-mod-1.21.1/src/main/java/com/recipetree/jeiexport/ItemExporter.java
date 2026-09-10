@@ -49,7 +49,7 @@ final class ItemExporter implements ExportJob.PhaseRunner {
         try {
             catalog.ensure(typed);
         } catch (Throwable t) {
-            ctx.failure("ITEM_IDENTITY: item catalog export: " + t);
+            ctx.failure("ITEM_IDENTITY: item catalog export", t);
         }
         done++;
         return queue.isEmpty();

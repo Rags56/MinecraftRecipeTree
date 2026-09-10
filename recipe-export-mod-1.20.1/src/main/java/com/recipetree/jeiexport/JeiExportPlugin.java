@@ -19,6 +19,16 @@ public class JeiExportPlugin implements IModPlugin {
     private static volatile IJeiRuntime runtime;
 
     @Override
+    public void registerCategories(mezz.jei.api.registration.IRecipeCategoryRegistration registration) {
+        ProjectEPlanner.registerCategories(registration);
+    }
+
+    @Override
+    public void registerIngredients(mezz.jei.api.registration.IModIngredientRegistration registration) {
+        ProjectEPlanner.register(registration);
+    }
+
+    @Override
     public ResourceLocation getPluginUid() {
         return UID;
     }

@@ -25,6 +25,7 @@ import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
@@ -137,8 +138,10 @@ final class LootSampler {
                 return (JsonArray) null;
             }
             try {
-                LootTable table = server.reloadableRegistries().getLootTable(living.getLootTable());
-                if (table == LootTable.EMPTY) {
+                LootTable table = resolveLootTable(
+                        living.getLootTable(),
+                        server.reloadableRegistries()::getLootTable);
+                if (table == null) {
                     return null;
                 }
                 ServerPlayer player = server.getPlayerList().getPlayers().isEmpty()
@@ -164,6 +167,30 @@ final class LootSampler {
                 living.discard();
             }
         }).join();
+    }
+
+    @Nullable
+    static LootTable resolveLootTable(
+            @Nullable net.minecraft.resources.ResourceKey<LootTable> lootTableId,
+            Function<net.minecraft.resources.ResourceKey<LootTable>, LootTable> resolver) {
+        if (lootTableId == null) {
+            return null;
+        }
+        LootTable table = resolver.apply(lootTableId);
+        return table == LootTable.EMPTY ? null : table;
+    }
+
+    /**
+     * Data packs can declare an intentionally empty table as an ordinary JSON object with no
+     * pools. Minecraft creates a distinct LootTable instance for it, so identity comparison with
+     * LootTable.EMPTY alone does not recognize the no-drop declaration.
+     */
+    static boolean isStructurallyEmpty(LootTable table) {
+        return table == LootTable.EMPTY || hasNoPools(table.pools);
+    }
+
+    static boolean hasNoPools(List<?> pools) {
+        return pools.isEmpty();
     }
 
     /**

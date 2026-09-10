@@ -1,7 +1,7 @@
+import {Modal} from '../ui/nativeUiScale';
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -263,7 +263,7 @@ export function ItemDetailModal({
 
           <ItemEmcValue itemKey={key} producedRefs={entry?.p ?? []} />
 
-          {onContentZoomChange ? (
+          {Platform.OS === 'web' && onContentZoomChange ? (
             <ContentZoomControl
               value={contentZoom}
               onValueChange={onContentZoomChange}

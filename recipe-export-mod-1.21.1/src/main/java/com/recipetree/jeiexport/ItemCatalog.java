@@ -1,5 +1,8 @@
 package com.recipetree.jeiexport;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
 import com.google.gson.stream.JsonWriter;
 import com.mojang.blaze3d.platform.NativeImage;
 import mezz.jei.api.constants.VanillaTypes;
@@ -31,6 +34,7 @@ import java.util.Set;
  * is guaranteed to exist in the catalog.
  */
 final class ItemCatalog {
+    private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
     private final ExportContext ctx;
     final IIngredientManager manager;
     private final JsonWriter writer;
@@ -78,6 +82,35 @@ final class ItemCatalog {
         }
         count++;
         return key;
+    }
+
+    /**
+     * Restores an ingredient referenced by a reused synthetic recipe. Synthetic trade outputs are
+     * not guaranteed to occur in JEI's ordinary ingredient list, so copying the recipe alone can
+     * otherwise leave its keys absent from items.json.
+     */
+    boolean restorePrevious(String key) throws IOException {
+        if (known.contains(key)) {
+            return true;
+        }
+        if (ctx.previous == null) {
+            return false;
+        }
+        JsonObject previousEntry = ctx.previous.item(key);
+        if (previousEntry == null) {
+            return false;
+        }
+        if (previousEntry.has("icon")) {
+            String previousIcon = previousEntry.get("icon").getAsString();
+            if (!ctx.reserveAndReusePreviousFile(previousIcon, previousIcon)) {
+                return false;
+            }
+        }
+        known.add(key);
+        GSON.toJson(previousEntry, writer);
+        count++;
+        ctx.reusedItems++;
+        return true;
     }
 
     static boolean isEmptyIngredient(ITypedIngredient<?> typed) {
@@ -145,31 +178,55 @@ final class ItemCatalog {
             mod = rl != null ? rl.getNamespace() : "unknown";
         }
 
-        String icon = null;
-        try {
-            icon = renderIcon(type, ingredient, prefix, rl, uid, key);
-        } catch (Throwable t) {
-            ctx.failure("icon " + key + ": " + t);
+        JsonObject entry = new JsonObject();
+        entry.addProperty("k", key);
+        entry.addProperty("id", rl != null ? rl.toString() : uid);
+        entry.addProperty("n", name);
+        entry.addProperty("m", mod);
+        if (!"item".equals(prefix)) {
+            entry.addProperty("t", prefix);
         }
 
-        try {
-            writer.beginObject();
-            writer.name("k").value(key);
-            writer.name("id").value(rl != null ? rl.toString() : uid);
-            writer.name("n").value(name);
-            writer.name("m").value(mod);
-            if (!"item".equals(prefix)) {
-                writer.name("t").value(prefix);
+        String icon = reuseIcon(key, entry);
+        if (icon == null) {
+            try {
+                icon = renderIcon(type, ingredient, prefix, rl, uid, key);
+            } catch (Throwable t) {
+                ctx.failure("icon " + key, t);
             }
-            if (icon != null) {
-                writer.name("icon").value(icon);
-            }
-            writer.endObject();
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed writing items.json", e);
         }
+        if (icon != null) {
+            entry.addProperty("icon", icon);
+        }
+
+        GSON.toJson(entry, writer);
         count++;
         return key;
+    }
+
+    @Nullable
+    private String reuseIcon(String key, JsonObject currentEntry) {
+        if (ctx.previous == null) {
+            return null;
+        }
+        try {
+            JsonObject previousEntry = ctx.previous.matchingItem(key, currentEntry);
+            if (previousEntry == null || !previousEntry.has("icon")) {
+                return null;
+            }
+            String previousIcon = previousEntry.get("icon").getAsString();
+            if (!ctx.reserveAndReusePreviousFile(previousIcon, previousIcon)) {
+                return null;
+            }
+            ctx.reusedItems++;
+            return previousIcon;
+        } catch (IOException cacheFailure) {
+            JeiExportMod.LOGGER.warn(
+                    "[jeiexport] Ingredient cache lookup failed for {}; rendering it again",
+                    key,
+                    cacheFailure);
+            return null;
+        }
     }
 
     private <V> String fallbackItemStackUid(IIngredientType<V> type, V ingredient, Throwable helperFailure) {
@@ -240,9 +297,10 @@ final class ItemCatalog {
         ImageVisibility.Result visibility = ImageVisibility.repairHiddenRgbAlpha(image);
         if (visibility == ImageVisibility.Result.EMPTY) {
             image.close();
-            ctx.failure("ingredient icon " + key
+            ctx.warning("ingredient icon " + key
                     + ": rendered image is fully transparent; omitting the PNG and JSON icon "
-                    + "reference so the viewer uses its named fallback");
+                    + "reference so the viewer uses its named fallback (this is expected for "
+                    + "invisible, technical, and unconfigured painted ingredients)");
             return null;
         }
         if (visibility == ImageVisibility.Result.REPAIRED_HIDDEN_RGB) {

@@ -43,6 +43,7 @@ final class MobExporter implements ExportJob.PhaseRunner {
     private static final int FPS = 10;
     /** Ticks of game time advanced between frames (20tps / 10fps). */
     private static final int TICKS_PER_FRAME = 2;
+    /** Increment when cached mob artwork must be rendered again. */
     private static final int RENDER_REVISION = 2;
     private static final int DROP_ROLLS = 600;
     /** Custom hooks are typically deterministic; enough rolls to catch uncommon modded rewards. */
@@ -55,6 +56,7 @@ final class MobExporter implements ExportJob.PhaseRunner {
     private final JsonArray mobsJson = new JsonArray();
     private int done;
     private boolean written;
+    private boolean mobCacheAvailable = true;
 
     MobExporter(ExportContext ctx) {
         this.ctx = ctx;
@@ -75,6 +77,9 @@ final class MobExporter implements ExportJob.PhaseRunner {
             ctx.failure("mob registry entry has no resource id: " + type);
             return !iterator.hasNext();
         }
+        if (reuseMob(id)) {
+            return !iterator.hasNext();
+        }
         Entity entity = null;
         try {
             entity = type.create(Minecraft.getInstance().level);
@@ -84,17 +89,46 @@ final class MobExporter implements ExportJob.PhaseRunner {
                 }
             }
         } catch (Throwable t) {
-            ctx.failure("mob " + id + ": " + t);
+            ctx.failure("mob " + id, t);
         } finally {
             if (entity != null) {
                 try {
                     entity.discard();
                 } catch (Throwable t) {
-                    ctx.failure("mob cleanup " + id + ": " + t);
+                    ctx.failure("mob cleanup " + id, t);
                 }
             }
         }
         return !iterator.hasNext();
+    }
+
+    private boolean reuseMob(ResourceLocation id) {
+        if (ctx.previous == null || !mobCacheAvailable) {
+            return false;
+        }
+        try {
+            JsonObject previousMob = ctx.previous.mob(id);
+            if (previousMob == null
+                    || !previousMob.has("icon")
+                    || !previousMob.has("renderRevision")
+                    || previousMob.get("renderRevision").getAsInt() != RENDER_REVISION) {
+                return false;
+            }
+            String icon = previousMob.get("icon").getAsString();
+            if (!ctx.reserveAndReusePreviousFile(icon, icon)) {
+                return false;
+            }
+            mobsJson.add(previousMob.deepCopy());
+            ctx.mobCount++;
+            ctx.reusedMobs++;
+            return true;
+        } catch (IOException cacheFailure) {
+            mobCacheAvailable = false;
+            JeiExportMod.LOGGER.warn(
+                    "[jeiexport] Mob cache lookup failed; rendering remaining mobs again",
+                    cacheFailure);
+            return false;
+        }
     }
 
     private boolean exportMob(EntityType<?> type, ResourceLocation id, LivingEntity entity) {
@@ -149,7 +183,7 @@ final class MobExporter implements ExportJob.PhaseRunner {
         try {
             mj.addProperty("hp", entity.getMaxHealth());
         } catch (Throwable t) {
-            ctx.failure("mob max health " + id + ": " + t);
+            ctx.failure("mob max health " + id, t);
         }
         mj.addProperty("cat", type.getCategory().getName());
 
@@ -160,13 +194,13 @@ final class MobExporter implements ExportJob.PhaseRunner {
             try {
                 drops = LootSampler.sampleEntityDrops(server, type, DROP_ROLLS);
             } catch (Throwable t) {
-                ctx.failure("mob drops " + id + ": " + t);
+                ctx.failure("mob drops " + id, t);
             }
             try {
                 JsonArray customDrops = LootSampler.sampleCustomDeathDrops(server, type, CUSTOM_DROP_ROLLS);
                 drops = mergeMissingCustomDrops(id, drops, customDrops);
             } catch (Throwable t) {
-                ctx.failure("mob custom death drops " + id + ": " + t);
+                ctx.failure("mob custom death drops " + id, t);
             }
         }
         drops = addKnownCustomDeathDrops(id, drops);

@@ -24,10 +24,17 @@ The key is configurable under Minecraft's **Controls → Recipe Tree** category.
   using each type's native JEI renderer, tooltip, identity, and amount;
 - supports background-drag panning and cursor-centered wheel zoom, with the arrow buttons reserved
   for moving backward and forward through recent output targets;
-- shares the active tree-history snapshot with the web/mobile viewers using portable
-  `.mrtree.json` JSON, copied to the clipboard and backed up at
-  `config/recipe-tree-shares/current-tree-history.mrtree.json`, then explains where the recipient
-  should paste it on the matching pack version of the site;
+- provides **Import / Export** for primary-tree JSON, clipboard/file imports, history, snapshots,
+  and exporter commands; saved files use unique names in `config/recipe-tree-shares/`;
+- keeps history and the last viewed tree separate for each local world or multiplayer server;
+- saves immutable snapshot baselines alongside an editable working version;
+- marks inputs reusable with **R** or the inspector/picker toggle, keeping their branches visible
+  at quantity one while excluding them from consumed materials;
+- gives the first player in a new local world a vanilla Recipe Tree guide, controlled by
+  `recipe_tree.spawnBookInNewWorlds` in `config/jeiexport-client.toml`;
+- shows a batched overview while panning oversized trees, and exposes machine recipes from
+  clickable catalyst icons in recipe-picker headings;
+- provides lazy ProjectE EMC transmutation choices and counts brewing bottle demand correctly;
 - adds up to 16 independent starting outputs to one pannable graph through a searchable item grid,
   combines their materials, processes, and byproduct allocation, and saves all roots in history;
 - wraps the current tree when a new output is chosen from the root, preserving the existing plan as
@@ -80,7 +87,7 @@ The portable format and compatibility limits are documented in
 
 ```bash
 JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew build
-# -> build/libs/jeiexport-1.2.0-beta.72.jar
+# -> build/libs/jeiexport-1.2.0-beta.73.jar
 ```
 
 Gradle 8.1.1 / ForgeGradle 6 / Forge 1.20.1. The release accepts Forge 47.1–47.x and either

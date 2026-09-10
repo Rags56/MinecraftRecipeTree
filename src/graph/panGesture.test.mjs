@@ -69,7 +69,7 @@ test('interface zoom scales graph menu chrome without scaling the graph canvas',
   assert.match(graphScreenSource, /style=\{\[styles\.controls, graphMenuScaleStyle\]\}/u);
   assert.match(
     graphScreenSource,
-    /style=\{\[styles\.ctrlBtn, styles\.fitControl, graphMenuScaleStyle\]\}/u,
+    /style=\{\[styles\.ctrlBtn, styles\.fitControl, graphMenuScaleStyle(?:,|\])/u,
   );
   assert.match(graphScreenSource, /interfaceZoom=\{interfaceZoom\}[\s\S]*?totals=\{treeTotals\}/u);
   assert.match(

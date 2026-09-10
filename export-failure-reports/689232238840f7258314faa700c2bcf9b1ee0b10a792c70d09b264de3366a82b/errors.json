@@ -1,0 +1,355 @@
+{
+  "format": "mrt-export-failure-file-v1",
+  "dedupeFingerprint": "689232238840f7258314faa700c2bcf9b1ee0b10a792c70d09b264de3366a82b",
+  "dedupeIdentity": {
+    "kind": "pack-version",
+    "packName": "Architects Exodus Layered Exporter Benchmark",
+    "packVersion": "1.8.0",
+    "minecraftVersion": "1.20.1"
+  },
+  "report": {
+    "format": "mrt-export-failure-report-v1",
+    "packName": "Architects Exodus Layered Exporter Benchmark",
+    "packVersion": "1.8.0",
+    "minecraftVersion": "1.20.1",
+    "exporterId": "jeiexport",
+    "exporterVersion": "1.2.0-beta.28",
+    "exporterBuild": null,
+    "generatedAt": "2026-08-04T00:23:26.022465Z",
+    "modVersions": {
+      "irons_spellbooks": "1.20.1-3.16.2"
+    },
+    "failures": [
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon custom_entityinput_e045b3b4|alexscaves:underzealot: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon custom_entityinput_e045b3b4|fdbosses:geburah_bell: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon custom_entityinput_e045b3b4|irons_spellbooks:ice_spider: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|ae2:cable_bus: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|ae2:matrix_frame: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|ae2:paint: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|ae2:wrapped_generic_stack: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|ars_nouveau:magic_fire: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|ars_nouveau:portal: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|block_factorys_bosses:boss_spawner: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|block_factorys_bosses:placeholder: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|enderio:painted_crafting_table: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|enderio:painted_fence_gate: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|enderio:painted_fence: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|enderio:painted_glowstone: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|enderio:painted_redstone_block: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|enderio:painted_sand: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|enderio:painted_slab: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|enderio:painted_stairs: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|enderio:painted_trapdoor: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|enderio:painted_travel_anchor: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|enderio:painted_wall: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|enderio:painted_wooden_pressure_plate: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|integrateddynamics:block_liquid_chorus: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|integrateddynamics:block_menril_resin: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|integrateddynamics:invisible_light: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|irons_spellbooks:invisibility_ring: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "export",
+        "modId": null,
+        "categoryId": null,
+        "recipeId": null,
+        "recipeIndex": null,
+        "recipeClass": null,
+        "errorType": null,
+        "message": "ingredient icon item|modonomicon:modonomicon: rendered image is fully transparent; omitting the PNG and JSON icon reference so the viewer uses its named fallback",
+        "details": null
+      },
+      {
+        "scope": "recipe",
+        "modId": "irons_spellbooks",
+        "categoryId": "irons_spellbooks:alchemist_cauldron",
+        "recipeId": null,
+        "recipeIndex": 21,
+        "recipeClass": "io.redspace.ironsspellbooks.jei.AlchemistCauldronJeiRecipe",
+        "errorType": null,
+        "message": "recipe recipes/irons_spellbooks_alchemist_cauldron #21: JEI returned no layout drawable; omitting the non-renderable placeholder",
+        "details": null
+      },
+      {
+        "scope": "recipe",
+        "modId": "irons_spellbooks",
+        "categoryId": "irons_spellbooks:alchemist_cauldron",
+        "recipeId": null,
+        "recipeIndex": 22,
+        "recipeClass": "io.redspace.ironsspellbooks.jei.AlchemistCauldronJeiRecipe",
+        "errorType": null,
+        "message": "recipe recipes/irons_spellbooks_alchemist_cauldron #22: JEI returned no layout drawable; omitting the non-renderable placeholder",
+        "details": null
+      }
+    ]
+  }
+}

@@ -3,7 +3,7 @@ import {Platform} from 'react-native';
 import {RecipeRef} from '../types';
 import type {GraphDirection} from '../graph/direction';
 
-export type Tab = 'items' | 'graph' | 'mobs';
+export type Tab = 'items' | 'graph' | 'mobs' | 'settings';
 
 /** One independently interactive recipe tree; every field here is exclusive to this tree. */
 export interface OpenGraphTree {

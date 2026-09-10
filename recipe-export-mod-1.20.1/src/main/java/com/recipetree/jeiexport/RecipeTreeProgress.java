@@ -35,6 +35,29 @@ public final class RecipeTreeProgress {
     private RecipeHistoryEntry lastViewedRecipeTree;
     private Set<String> discoveredItems = new HashSet<>();
     private boolean recipeBookMode;
+    private Set<String> reusableInputs = new HashSet<>();
+    private Map<String, WorldHistory> worldHistories = new HashMap<>();
+    private transient String activeWorld;
+
+    private record WorldHistory(List<RecipeHistoryEntry> entries, RecipeHistoryEntry lastViewed) {}
+
+    void setActiveWorld(String key) {
+        activeWorld = key;
+    }
+
+    public boolean isReusableInput(String recipe, String ingredient) {
+        return recipe != null && reusableInputs.contains(recipe + "\u0000" + ingredient);
+    }
+
+    public void setReusableInputs(String recipe, Collection<String> ingredients, boolean reusable) {
+        if (recipe == null) return;
+        boolean changed = false;
+        for (String ingredient : ingredients) {
+            String key = recipe + "\u0000" + ingredient;
+            changed |= reusable ? reusableInputs.add(key) : reusableInputs.remove(key);
+        }
+        if (changed) save();
+    }
 
     public record SavedPlan(long amount, String recipeKey) {
     }
@@ -75,7 +98,12 @@ public final class RecipeTreeProgress {
             String ingredientKey,
             String ingredientName,
             String recipeKey,
-            String recipeType) {
+            String recipeType,
+            boolean reusableInput) {
+        public RecipeHistorySelection(int rootIndex, List<Integer> path, String ingredientKey,
+                String ingredientName, String recipeKey, String recipeType) {
+            this(rootIndex, path, ingredientKey, ingredientName, recipeKey, recipeType, false);
+        }
         public RecipeHistorySelection(
                 List<Integer> path,
                 String ingredientKey,
@@ -92,7 +120,9 @@ public final class RecipeTreeProgress {
             Map<String, Boolean> collapsedRecipeTypes,
             List<RecipeHistoryEntry> recipeHistory,
             RecipeHistoryEntry lastViewedRecipeTree,
-            boolean recipeBookMode) {
+            boolean recipeBookMode,
+            Set<String> reusableInputs,
+            Map<String, WorldHistory> worldHistories) {
     }
 
     private RecipeTreeProgress() {
@@ -161,15 +191,17 @@ public final class RecipeTreeProgress {
     }
 
     public List<RecipeHistoryEntry> recipeHistory() {
-        return List.copyOf(recipeHistory);
+        WorldHistory scoped = worldHistories.get(activeWorld);
+        return scoped == null ? List.of() : List.copyOf(scoped.entries());
     }
 
     public void replaceRecipeHistory(List<RecipeHistoryEntry> history) {
-        replaceRecipeHistory(history, lastViewedRecipeTree);
+        replaceRecipeHistory(history, lastViewedRecipeTree());
     }
 
     public RecipeHistoryEntry lastViewedRecipeTree() {
-        return lastViewedRecipeTree;
+        WorldHistory scoped = worldHistories.get(activeWorld);
+        return scoped == null ? null : scoped.lastViewed();
     }
 
     public void replaceRecipeHistory(
@@ -177,10 +209,12 @@ public final class RecipeTreeProgress {
             RecipeHistoryEntry lastViewed) {
         int first = Math.max(0, history.size() - 32);
         List<RecipeHistoryEntry> replacement = new ArrayList<>(history.subList(first, history.size()));
-        if (recipeHistory.equals(replacement)
-                && java.util.Objects.equals(lastViewedRecipeTree, lastViewed)) return;
-        recipeHistory = replacement;
-        lastViewedRecipeTree = lastViewed;
+        if (activeWorld == null) {
+            JeiExportMod.LOGGER.warn("Cannot save recipe history without an active world scope");
+            return;
+        }
+        WorldHistory next = new WorldHistory(replacement, lastViewed);
+        if (next.equals(worldHistories.put(activeWorld, next))) return;
         save();
     }
 
@@ -262,6 +296,15 @@ public final class RecipeTreeProgress {
                 JeiExportMod.LOGGER.warn("Could not load local recipe-tree plans from {}", FILE, error);
             }
         }
+        if (loaded.reusableInputs == null) loaded.reusableInputs = new HashSet<>();
+        if (loaded.worldHistories == null) loaded.worldHistories = new HashMap<>();
+        if (loaded.recipeHistory != null && !loaded.recipeHistory.isEmpty()) {
+            JeiExportMod.LOGGER.info("Preserving legacy unscoped history in {}; new history is stored per world", FILE);
+        }
+        loaded.worldHistories.replaceAll((key, world) -> new WorldHistory(
+                world == null || world.entries == null ? List.of() : world.entries.stream()
+                        .filter(java.util.Objects::nonNull).map(RecipeTreeProgress::normalizeHistoryEntry).limit(32).toList(),
+                world == null || world.lastViewed == null ? null : normalizeHistoryEntry(world.lastViewed)));
         if (loaded.plans == null) loaded.plans = new HashMap<>();
         if (loaded.favoriteRecipes == null) loaded.favoriteRecipes = new HashMap<>();
         if (loaded.collapsedRecipeTypes == null) loaded.collapsedRecipeTypes = new HashMap<>();
@@ -323,7 +366,7 @@ public final class RecipeTreeProgress {
                 collapsedRecipeTypes,
                 recipeHistory,
                 lastViewedRecipeTree,
-                recipeBookMode), "local recipe-tree plans");
+                recipeBookMode, reusableInputs, worldHistories), "local recipe-tree plans");
     }
 
     private synchronized void saveDiscoveries() {
@@ -342,7 +385,8 @@ public final class RecipeTreeProgress {
                 Files.move(temporary, destination,
                         StandardCopyOption.ATOMIC_MOVE,
                         StandardCopyOption.REPLACE_EXISTING);
-            } catch (IOException unsupportedAtomicMove) {
+            } catch (java.nio.file.AtomicMoveNotSupportedException unsupportedAtomicMove) {
+                JeiExportMod.LOGGER.warn("Atomic move unavailable for {}; using replacement", destination, unsupportedAtomicMove);
                 Files.move(temporary, destination, StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (IOException error) {

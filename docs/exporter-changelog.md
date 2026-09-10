@@ -60,6 +60,43 @@ manifest remains the source of truth for downloadable filenames, checksums, and 
 - Show extra aspects as a single row of icons and amounts only while hovering that corner,
   without names or a heading. Keep the normal item tooltip elsewhere on the card.
 
+## 2026-09-05
+
+### Modern planner feature parity
+
+- Forge 1.20.1: **1.2.0-beta.73**; NeoForge 1.21.1: **1.2.0-beta.2**.
+- Bring forward the recent 1.12.2 planner features: unified Import / Export, primary-tree shares,
+  immutable snapshot baselines with working versions, world/server history, reusable inputs,
+  configurable one-time new-world guide books, native tooltips, and inventory-key navigation.
+- Move byproduct use into its tab, tint selected recipe types like 1.12, add clickable machine
+  icons to picker headings, and show a batched overview while panning oversized trees.
+- Let the add-to-tree / start-new-tree recipe dialog fill the window with a small outer margin.
+- Expand the main tree viewer to the window, allow either root to be removed while retaining
+  at least one, and promote the remaining root for titles, JEI, history, and portable exports.
+- Render the drag overview at the top-left with visible nodes, connections, and a viewport marker.
+- Keep hovered sidebar recipes compact with the summary below, and place tree quantities beneath
+  the full native recipe border with dedicated spacing in the tree layout.
+- Bound availability probes per frame, cache repeated recipe queries, and suppress favorite
+  expansion while restoring saved trees.
+- Restore saved ingredient alternatives on import before applying reusable-input flags.
+- Add lazy ProjectE EMC planner recipes using the live API and native transmutation texture.
+- Use JEI's semantic brewing API to count one potion input/output, retaining its native layout.
+  The 1.12-specific Thermal wrapper patch is not used against modern JEI wrappers.
+
+
+### NeoForge 1.21.1 exporter and recipe planner
+
+- NeoForge JEI 1.21.1 beta: **1.2.0-beta.1** (Java 21, NeoForge 21.1, JEI 19.21.2.313–19.x)
+- Port the Forge 1.20.1 in-game planner: G key, JEI recipe layouts, Compact/Details modes,
+  ingredient alternatives, multiple outputs, quantities, machine planning, favorites, discovery,
+  local history, and portable tree sharing.
+- Port incremental snapshots, delta archives, shared recipe image layers, export speed controls,
+  and structured failure reports while retaining the 1.21.1 exporter API adaptations.
+- Adapt client events, scrolling, tooltips, item component comparisons, and vertex rendering for
+  Minecraft 1.21.1. Unwrap JEI recipe holders when extracting cooking durations.
+- Include Minecraft version and loader in the build filename to distinguish it from older ports.
+- This port requires JEI; the Forge 1.20.1 REI adapter is not included.
+
 ## 2026-09-04
 
 ### Searchable recipe picker and aspect byproducts

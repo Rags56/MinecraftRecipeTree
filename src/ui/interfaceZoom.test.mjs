@@ -31,8 +31,8 @@ test('secondary information actions share one anchored header menu without impor
     /accessibilityLabel=\{showInfoMenu \? 'Close information menu' : 'Open information menu'\}/u,
   );
   assert.match(appSource, /accessibilityRole="menu"/u);
-  assert.match(appSource, /onPointerDown=\{showInfoMenu \? closeInfoMenu : undefined\}/u);
-  assert.match(appSource, /onTouchStart=\{showInfoMenu \? closeInfoMenu : undefined\}/u);
+  assert.match(appSource, /onPointerDown=\{showInfoMenu \|\| \(Platform\.OS !== 'web' && showAppMenu\) \? closeHeaderMenus : undefined\}/u);
+  assert.match(appSource, /onTouchStart=\{showInfoMenu \|\| \(Platform\.OS !== 'web' && showAppMenu\) \? closeHeaderMenus : undefined\}/u);
   assert.match(
     appSource,
     /style=\{styles\.infoMenuAnchor\}[\s\S]*?onPointerDown=\{event => event\.stopPropagation\(\)\}/u,
@@ -72,7 +72,7 @@ test('desktop keeps the import dropdown on the title row while compact layouts u
     switcherSource.indexOf(') : compact ? ('),
   );
   assert.doesNotMatch(nativeBranch, /\{importMenu\}/u);
-  assert.match(appSource, />\s*Import pack\s*</u);
+  assert.match(appSource, /Platform\.OS === 'web' \? 'Import pack' : 'Import tree'/u);
   assert.match(switcherSource, />\s*Import pack\s*</u);
   assert.match(switcherSource, />\s*Import crafting tree\s*</u);
   assert.doesNotMatch(switcherSource, /importDropdownIcon/u);

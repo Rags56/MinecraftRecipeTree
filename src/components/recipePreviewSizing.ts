@@ -90,3 +90,15 @@ export function responsiveRecipePreviewSize(
           : 'fractional-downscale';
   return {width, height, scale, mode};
 }
+
+/** Native previews can pan horizontally instead of cancelling zoom at the viewport edge. */
+export function nativeRecipePreviewSize(
+  logicalWidth: number, logicalHeight: number, recipeScale: number,
+  availableCardWidth: number, contentZoom: number, interfaceScale = 1,
+): {width: number; height: number} {
+  if (!Number.isFinite(interfaceScale) || interfaceScale <= 0 || !Number.isFinite(contentZoom) || contentZoom <= 0) {
+    throw new Error('Native recipe display scales must be positive finite values.');
+  }
+  const base = responsiveRecipePreviewSize(logicalWidth, logicalHeight, recipeScale, availableCardWidth * interfaceScale, 1);
+  return {width: base.width * contentZoom / interfaceScale, height: base.height * contentZoom / interfaceScale};
+}

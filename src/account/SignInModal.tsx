@@ -1,7 +1,7 @@
+import {Modal} from '../ui/nativeUiScale';
 import React, {useState} from 'react';
 import {
   ActivityIndicator,
-  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -21,6 +21,7 @@ export function SignInModal({
 }: {
   visible: boolean;
   interfaceZoom?: number;
+  anchor?: {x: number; y: number; width: number; height: number};
   onClose(): void;
 }) {
   const account = useUser();
