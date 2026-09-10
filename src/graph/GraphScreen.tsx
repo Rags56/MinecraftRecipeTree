@@ -162,6 +162,8 @@ import {
   type AutoExpandSummaryEntry,
 } from './AutoExpandSummaryModal';
 import {LowDetailGraphCanvas} from './LowDetailGraphCanvas';
+import {GraphMinimap, MINIMAP_MAX_WIDTH} from './GraphMinimap';
+import {shouldShowMinimap, transformCenteredOn} from './minimap';
 import {autoExpandPreferredNodes} from './autoExpandTree';
 import {
   createDeferredRecipeSourceResolver,
@@ -3030,6 +3032,27 @@ export function GraphScreen({
     }
   }, [graph, fitView]);
 
+  const recenterOnGraphPoint = useCallback(
+    (graphPoint: {x: number; y: number}) => {
+      const vp = viewportRef.current;
+      if (vp.w === 0 || vp.h === 0) return;
+      applyTransform(transformCenteredOn(graphPoint, transformRef.current, vp));
+    },
+    [applyTransform],
+  );
+  const minimapVisible = useMemo(
+    () => (graph ? shouldShowMinimap(graph, viewportSize, transform) : false),
+    [graph, transform, viewportSize],
+  );
+  // The bottom notices span to the right edge, which is exactly where the overview sits.
+  const bottomNoticeStyle = useMemo(
+    () =>
+      minimapVisible
+        ? {right: CANVAS_EDGE_INSET + MINIMAP_MAX_WIDTH + 8}
+        : null,
+    [minimapVisible],
+  );
+
   const zoomAt = useCallback((px: number, py: number, factor: number) => {
     const current = transformRef.current;
     const scale = Math.min(4, Math.max(0.12, current.scale * factor));
@@ -3787,7 +3810,7 @@ export function GraphScreen({
 
       {graphLayout.fallback && (
         <View
-          style={[styles.layoutFallbackNotice, graphMenuScaleStyle]}
+          style={[styles.layoutFallbackNotice, bottomNoticeStyle, graphMenuScaleStyle]}
           accessibilityRole="alert">
           <Text style={[styles.layoutFallbackText, noSelect]}>{graphLayout.fallback}</Text>
         </View>
@@ -3937,7 +3960,7 @@ export function GraphScreen({
       )}
       {showLargeTreeUniqueNotice && (
         <View
-          style={[styles.uniqueModeNotice, graphMenuScaleStyle]}
+          style={[styles.uniqueModeNotice, bottomNoticeStyle, graphMenuScaleStyle]}
           accessibilityRole="alert">
           <Text style={[styles.uniqueModeNoticeText, noSelect]}>
             Unique mode stays on after this tree reaches {DENSE_GRAPH_NODE_THRESHOLD} nodes. It
@@ -3958,6 +3981,7 @@ export function GraphScreen({
         <View
           style={[
             styles.uniqueModeNotice,
+            bottomNoticeStyle,
             showLargeTreeUniqueNotice && styles.treeImportNoticeStacked,
             graphMenuScaleStyle,
           ]}
@@ -3998,6 +4022,15 @@ export function GraphScreen({
         onPress={fitView}>
         <Text style={[styles.ctrlBtnText, styles.fitControlIcon]}>⛶</Text>
       </TouchableOpacity>
+      {graph && minimapVisible && (
+        <GraphMinimap
+          layout={graph}
+          transform={transform}
+          viewport={viewportSize}
+          onRecenter={recenterOnGraphPoint}
+          style={[styles.minimap, graphMenuScaleStyle] as object}
+        />
+      )}
       {showGraphControls && graphDirection === 'inputs' && showTreeTotals && (
         <TreeTotalsPanel
           interfaceZoom={interfaceZoom}
@@ -6265,6 +6298,12 @@ const styles = StyleSheet.create({
     width: 'auto',
     minWidth: 118,
     paddingHorizontal: 10,
+  },
+  /** Opposite corner from the fit control, which is the other persistent canvas affordance. */
+  minimap: {
+    position: 'absolute',
+    right: CANVAS_EDGE_INSET,
+    bottom: CANVAS_EDGE_INSET,
   },
   fitControl: {
     position: 'absolute',
