@@ -3,7 +3,7 @@ import {Platform, StyleSheet, View} from 'react-native';
 import {useData} from '../data/DataContext';
 import {projecteEmcIconItemKey} from '../data/projecteEmc';
 import {resolvedThemeColor} from '../theme';
-import type {LaidNode} from './layout';
+import type {EdgeRect, LaidNode} from './layout';
 import {lowDetailRasterGeometry} from './lowDetailRaster';
 import type {GraphTransform} from './panGesture';
 
@@ -14,6 +14,7 @@ interface CachedRasterIcon {
 
 interface RasterRenderState {
   nodes: readonly LaidNode[];
+  edges: readonly EdgeRect[];
   transform: GraphTransform;
   viewport: {w: number; h: number};
 }
@@ -44,10 +45,12 @@ function fallbackColor(key: string): string {
  */
 export const LowDetailGraphCanvas = React.memo(function LowDetailGraphCanvas({
   nodes,
+  edges,
   transform,
   viewport,
 }: {
   nodes: readonly LaidNode[];
+  edges: readonly EdgeRect[];
   transform: GraphTransform;
   viewport: {w: number; h: number};
 }) {
@@ -57,8 +60,8 @@ export const LowDetailGraphCanvas = React.memo(function LowDetailGraphCanvas({
   const iconsRef = useRef(new Map<string, CachedRasterIcon>());
   const datasetIdentityRef = useRef(data.datasetIdentity);
   const animationFrameRef = useRef(0);
-  const renderStateRef = useRef<RasterRenderState>({nodes, transform, viewport});
-  renderStateRef.current = {nodes, transform, viewport};
+  const renderStateRef = useRef<RasterRenderState>({nodes, edges, transform, viewport});
+  renderStateRef.current = {nodes, edges, transform, viewport};
 
   const clearIconCache = useCallback(() => {
     for (const icon of iconsRef.current.values()) {
@@ -102,6 +105,26 @@ export const LowDetailGraphCanvas = React.memo(function LowDetailGraphCanvas({
         draw();
       });
     };
+
+    context.fillStyle = resolvedThemeColor('borderLight');
+    context.globalAlpha = 0.65;
+    for (const edge of state.edges) {
+      const left = edge.x * state.transform.scale + state.transform.x;
+      const top = edge.y * state.transform.scale + state.transform.y;
+      const edgeWidth = Math.max(1, edge.w * state.transform.scale);
+      const edgeHeight = Math.max(1, edge.h * state.transform.scale);
+      if (left > width || top > height || left + edgeWidth < 0 || top + edgeHeight < 0) continue;
+      if (edge.angle === undefined) {
+        context.fillRect(left, top, edgeWidth, edgeHeight);
+        continue;
+      }
+      // Diagonals are rotated about their own centre, matching how the view tier transforms them.
+      context.save();
+      context.translate(left + edgeWidth / 2, top + edgeHeight / 2);
+      context.rotate(edge.angle);
+      context.fillRect(-edgeWidth / 2, -edgeHeight / 2, edgeWidth, edgeHeight);
+      context.restore();
+    }
 
     for (const node of state.nodes) {
       const geometry = lowDetailRasterGeometry(node, state.transform);

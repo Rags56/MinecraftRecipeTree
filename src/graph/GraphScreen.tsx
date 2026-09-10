@@ -2598,7 +2598,9 @@ export function GraphScreen({
       transform,
       viewportSize,
       rasterLowDetailGraph ? 0 : GRAPH_VIEWPORT_OVERSCAN,
-      !lowDetailGraph,
+      // Kept at every tier: the lines are what make this read as a tree rather than as loose
+      // chips, and they are the cheapest thing on the canvas -- a plain rect each.
+      true,
     );
     const visibleSupplyEdges = lowDetailGraph
       ? []
@@ -2628,8 +2630,7 @@ export function GraphScreen({
     [graphDirection, treeTotals],
   );
   const handleLowDetailNodeTap = useCallback(
-    (node: ItemTreeNode) =>
-      node.id === 'root' ? setShowRootActions(value => !value) : onItemTap(node),
+    (node: ItemTreeNode) => onItemTap(node),
     [onItemTap],
   );
   const handleLowDetailNodeActions = useCallback(
@@ -3828,6 +3829,7 @@ export function GraphScreen({
         {rasterLowDetailGraph && (
           <LowDetailGraphCanvas
             nodes={renderedGraph?.nodes ?? []}
+            edges={renderedGraph?.edges ?? []}
             transform={displayTransform}
             viewport={viewportSize}
           />
@@ -3879,7 +3881,7 @@ export function GraphScreen({
                   : ({zoom: displayTransform.scale} as unknown as object)
                 : null,
             ]}>
-          {!lowDetailGraph && renderedGraph?.edges.map((e, i) => (
+          {!rasterLowDetailGraph && renderedGraph?.edges.map((e, i) => (
             <View
               key={`e${i}`}
               style={[
@@ -3995,7 +3997,7 @@ export function GraphScreen({
                 }
                 onTap={() =>
                   n.item.id === 'root'
-                    ? setShowRootActions(value => !value)
+                    ? onItemTap(n.item)
                     : handleCollapsedIngredientTap(n.item, () =>
                         n.item.deferredRecipeExpansion || n.radial
                           ? onItemTap(n.item)
@@ -4034,7 +4036,7 @@ export function GraphScreen({
                 rootActions={n.item.id === 'root' ? rootNodeActions : undefined}
                 onTap={() =>
                   n.item.id === 'root'
-                    ? setShowRootActions(value => !value)
+                    ? onItemTap(n.item)
                     : handleCollapsedIngredientTap(n.item, () => onItemTap(n.item))
                 }
                 onInfo={() => openItem(n.item.key)}
@@ -4066,11 +4068,7 @@ export function GraphScreen({
                     n.item.alternatives,
                   ).length > 1
                 }
-                onCollapse={() =>
-                  n.item.id === 'root'
-                    ? setShowRootActions(value => !value)
-                    : onItemTap(n.item)
-                }
+                onCollapse={() => onItemTap(n.item)}
                 onSwap={() => openPickerWithErrorHandling(n.item)}
                 onInfo={() => openItem(n.item.key)}
                 onActions={pointer => openNodeMenu(n.item, pointer)}
@@ -4660,6 +4658,15 @@ export function GraphScreen({
           }
           onUnsetRecipe={() => unsetNodeRecipe(nodeMenu.node)}
           onCollapseRecipe={() => collapseNodeRecipe(nodeMenu.node)}
+          onToggleRootControls={
+            nodeMenu.node.id === 'root'
+              ? () => {
+                  setShowRootActions(value => !value);
+                  setNodeMenu(null);
+                }
+              : undefined
+          }
+          rootControlsShown={showRootActions}
           onFocusBranch={() => focusBranch(nodeMenu.node)}
           isFocused={focusNodeId === nodeMenu.node.id}
           canFocusBranch={focusModeEnabled}
@@ -5098,6 +5105,8 @@ function NodeActionMenu({
   onAmountChange,
   onUnsetRecipe,
   onCollapseRecipe,
+  onToggleRootControls,
+  rootControlsShown,
   onFocusBranch,
   isFocused,
   canFocusBranch,
@@ -5116,6 +5125,9 @@ function NodeActionMenu({
   onAmountChange?: (amount: number) => void;
   onUnsetRecipe: () => void;
   onCollapseRecipe: () => void;
+  /** Root only: the amount stepper and pickers attached to the node itself. */
+  onToggleRootControls?: () => void;
+  rootControlsShown: boolean;
   onFocusBranch: () => void;
   /** Focusing the node that is already focused is how the user gets the whole tree back. */
   isFocused: boolean;
@@ -5251,6 +5263,20 @@ function NodeActionMenu({
                 </Text>
                 <Text style={styles.nodeActionButtonHint}>
                   Manual override for this recipe input
+                </Text>
+              </TouchableOpacity>
+            )}
+            {onToggleRootControls && (
+              <TouchableOpacity
+                {...signalTarget('graph.node-menu.root-controls')}
+                accessibilityRole="button"
+                style={styles.nodeActionButton}
+                onPress={onToggleRootControls}>
+                <Text style={styles.nodeActionButtonText}>
+                  {rootControlsShown ? 'Hide root controls' : 'Show root controls'}
+                </Text>
+                <Text style={styles.nodeActionButtonHint}>
+                  The amount and recipe controls attached to the root node
                 </Text>
               </TouchableOpacity>
             )}

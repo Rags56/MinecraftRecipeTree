@@ -1,7 +1,13 @@
 import type {LaidNode} from './layout.ts';
 import type {GraphTransform} from './panGesture.ts';
 
-export const LOW_DETAIL_RASTER_ICON_SIZE = 32;
+/**
+ * Far-zoom nodes are drawn as a square chip on the node's own centre rather than filling the box
+ * the layout allocated. An item box is 172 by 58, so drawing it faithfully at this zoom gives a
+ * wide empty rectangle with a small icon adrift in the middle of it; the chip is the size the
+ * icon actually needs, and the centre is unchanged, so edges still meet it where they always did.
+ */
+export const LOW_DETAIL_ICON_FILL = 0.78;
 
 export interface LowDetailRasterGeometry {
   left: number;
@@ -40,9 +46,10 @@ export function lowDetailRasterGeometry(
 
   const centerX = (node.x + node.w / 2) * transform.scale + transform.x;
   const centerY = (node.y + node.h / 2) * transform.scale + transform.y;
-  const width = Math.max(1, node.w * transform.scale);
-  const height = Math.max(1, node.h * transform.scale);
-  const iconSize = Math.max(1, LOW_DETAIL_RASTER_ICON_SIZE * transform.scale);
+  const chip = Math.max(1, Math.min(node.w, node.h) * transform.scale);
+  const width = chip;
+  const height = chip;
+  const iconSize = Math.max(1, chip * LOW_DETAIL_ICON_FILL);
   return {
     left: centerX - width / 2,
     top: centerY - height / 2,
