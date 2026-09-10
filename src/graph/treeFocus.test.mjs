@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {findTreeNodeById, isNodeVisible, treeFocus, visibleInputs} from './treeFocus.ts';
 
@@ -84,4 +85,21 @@ test('a focused layout draws only children on the focused branch', () => {
   assert.equal(isNodeVisible(focus.visibleNodeIds, 'right'), true);
   // A node with no children is unaffected either way.
   assert.deepEqual(visibleInputs(item('leaf', 'leaf'), focus.visibleNodeIds), []);
+});
+
+test('desktop opts into focus while a phone always offers it', () => {
+  // The default is platform-dependent rather than a stored preference, so it is asserted from
+  // the source: a desktop canvas already shows the tree, a phone canvas does not.
+  const source = readFileSync(new URL('./GraphScreen.tsx', import.meta.url), 'utf8');
+  const loader = source.slice(source.indexOf('function loadFocusMode'));
+  assert.match(loader.slice(0, 200), /if \(Platform\.OS !== 'web'\) return true;/u);
+  assert.match(loader.slice(0, 400), /getItem\(FOCUS_MODE_KEY\) === '1'/u);
+  // The toggle is a desktop affordance; a phone reaches focus from the node menu instead.
+  assert.match(source, /Platform\.OS === 'web' && \(\s*<CtrlBtn\s*label="Focus"/u);
+});
+
+test('turning focus mode off cannot strand an unreachable focus', () => {
+  const source = readFileSync(new URL('./GraphScreen.tsx', import.meta.url), 'utf8');
+  const toggle = source.slice(source.indexOf('const toggleFocusMode'));
+  assert.match(toggle.slice(0, 400), /if \(!next\) setFocusNodeId\(null\);/u);
 });
