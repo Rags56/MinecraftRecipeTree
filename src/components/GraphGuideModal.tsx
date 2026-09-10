@@ -42,6 +42,7 @@ type KeyVariant =
   | 'root'
   | 'terminal'
   | 'recursive'
+  | 'collapsed'
   | 'transfer'
   | 'complete'
   | 'partial';
@@ -64,6 +65,11 @@ const visualKey: ReadonlyArray<{
     variant: 'recursive',
     title: 'Amber outline',
     description: 'A recursive input.',
+  },
+  {
+    variant: 'collapsed',
+    title: 'Dashed green outline',
+    description: 'Collapsed: a chosen recipe is folded away here. Tap to open it again.',
   },
   {
     variant: 'transfer',
@@ -217,6 +223,7 @@ const styles = StyleSheet.create({
   },
   swatchTerminal: {borderColor: theme.textDim},
   swatchRecursive: {borderColor: theme.warn},
+  swatchCollapsed: {borderColor: theme.accent, borderStyle: 'dashed'},
   swatchTransfer: {borderColor: theme.transfer, borderStyle: 'dotted'},
   swatchComplete: {borderColor: theme.accentAlt},
   swatchPartial: {borderColor: theme.accentAlt, borderStyle: 'dashed'},

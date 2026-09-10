@@ -1226,11 +1226,7 @@ export function GraphScreen({
         match.source = undefined;
       }
       for (const match of matches) {
-        // Each occurrence gets its own budget: they sit at different depths, and one shared
-        // allowance would let the first match spend everything the rest needed.
-        applyChoiceRef.current?.(match, choice, {
-          expansionBudget: expansionBudget && new ExpansionBudget(undefined, match.ancestors.length),
-        });
+        applyChoiceRef.current?.(match, choice, {expansionBudget});
       }
     },
     [],
@@ -2033,7 +2029,9 @@ export function GraphScreen({
           recipeRef: expansion.ref,
         });
         node.deferredRecipeExpansion = undefined;
-        await applyRecipeChoice(node, {t: 'recipe', ...expansion});
+        await applyRecipeChoice(node, {t: 'recipe', ...expansion}, {
+          expansionBudget: budgetFor(node),
+        });
         return;
       }
       const ownerExpansion = recipeExpansionFromSource(owner.source);
@@ -2052,7 +2050,9 @@ export function GraphScreen({
       // Moving the visible occurrence of a recipe must not behave like Fit.
       bump();
 
-      const expanded = await applyRecipeChoice(node, {t: 'recipe', ...expansion});
+      const expanded = await applyRecipeChoice(node, {t: 'recipe', ...expansion}, {
+        expansionBudget: budgetFor(node),
+      });
       if (expanded && node.source) return;
 
       console.error('Recipe expansion ownership transfer failed; restoring the previous owner.', {
@@ -2062,7 +2062,9 @@ export function GraphScreen({
       });
       node.deferredRecipeExpansion = expansion;
       owner.deferredRecipeExpansion = undefined;
-      const restored = await applyRecipeChoice(owner, {t: 'recipe', ...ownerExpansion});
+      const restored = await applyRecipeChoice(owner, {t: 'recipe', ...ownerExpansion}, {
+        expansionBudget: budgetFor(owner),
+      });
       if (!restored || !owner.source) {
         console.error('The previous recipe expansion owner could not be restored.', {
           ownerNodeId: owner.id,
@@ -2072,6 +2074,7 @@ export function GraphScreen({
     },
     [
       applyRecipeChoice,
+      budgetFor,
       bump,
       graphDirection,
       releaseByproductFulfillmentsFromSubtree,
@@ -2179,6 +2182,13 @@ export function GraphScreen({
    * silently re-expand. Descendants keep their remembered sources; those are a per-item
    * preference, not part of this workspace.
    */
+  const treeIsExpanded = !!root?.source;
+  const toggleWholeTree = useCallback(() => {
+    const currentRoot = rootRef.current;
+    if (!currentRoot) return;
+    onItemTap(currentRoot);
+  }, [onItemTap]);
+
   const clearAllExpansions = useCallback(() => {
     const currentRoot = rootRef.current;
     if (currentRoot) {
@@ -2341,7 +2351,7 @@ export function GraphScreen({
           graphDirection,
         });
       } else {
-        applyChoice(newRoot, pendingRootChoice.choice);
+        applyChoice(newRoot, pendingRootChoice.choice, {expansionBudget: budgetFor(newRoot)});
         return;
       }
     }
@@ -2629,6 +2639,15 @@ export function GraphScreen({
         : requiredAmountFor(node, treeTotals),
     [graphDirection, treeTotals],
   );
+  const isCollapsedBranch = useCallback(
+    (node: ItemTreeNode) =>
+      !node.source &&
+      !node.deferredRecipeExpansion &&
+      node.id !== 'root' &&
+      preferredSources[node.key] !== undefined,
+    [preferredSources],
+  );
+
   const handleLowDetailNodeTap = useCallback(
     (node: ItemTreeNode) => onItemTap(node),
     [onItemTap],
@@ -3270,7 +3289,11 @@ export function GraphScreen({
           const expansion = node.deferredRecipeExpansion;
           if (!expansion) continue;
           node.deferredRecipeExpansion = undefined;
-          void applyRecipeChoice(node, {t: 'recipe', ...expansion});
+          // Turning Unique off asks for the duplicates themselves, not for a deep cascade under
+          // every one of them, so each still expands within its own budget.
+          void applyRecipeChoice(node, {t: 'recipe', ...expansion}, {
+            expansionBudget: budgetFor(node),
+          });
         }
       }
       bump();
@@ -3978,6 +4001,7 @@ export function GraphScreen({
                 branchLabel={n.compactBranch === true}
                 showLabel
                 showAmounts={showNodeAmounts}
+                collapsedBranch={isCollapsedBranch(n.item)}
                 deferredDuplicate={!!n.item.deferredRecipeExpansion}
                 rootActions={n.item.id === 'root' ? rootNodeActions : undefined}
                 onChangeRecipe={
@@ -4024,6 +4048,7 @@ export function GraphScreen({
                       n.item.alternatives,
                     ).length > 0)
                 }
+                collapsedBranch={isCollapsedBranch(n.item)}
                 deferredDuplicate={!!n.item.deferredRecipeExpansion}
                 terminalLabel={
                   isRecursiveItemNode(n.item)
@@ -4148,6 +4173,16 @@ export function GraphScreen({
             />
           </View>
         )}
+        <TouchableOpacity
+          {...signalTarget('graph.control.collapse-all')}
+          accessibilityRole="button"
+          accessibilityLabel={treeIsExpanded ? 'Collapse the whole tree' : 'Expand the whole tree'}
+          style={[styles.ctrlBtn, styles.controlMenuBtn]}
+          onPress={toggleWholeTree}>
+          <Text style={[styles.ctrlBtnText, styles.settingsGearIcon]}>
+            {treeIsExpanded ? '⊟' : '⊞'}
+          </Text>
+        </TouchableOpacity>
         <TouchableOpacity
           {...signalTarget('graph.control.menu')}
           accessibilityRole="button"
@@ -5338,6 +5373,7 @@ function CompactItemNodeView({
   branchLabel = false,
   showLabel,
   showAmounts,
+  collapsedBranch,
   deferredDuplicate,
   rootActions,
   onChangeRecipe,
@@ -5358,6 +5394,8 @@ function CompactItemNodeView({
   branchLabel?: boolean;
   showLabel: boolean;
   showAmounts: boolean;
+  /** Not expanded, but a remembered recipe means there is a tree folded under it. */
+  collapsedBranch: boolean;
   deferredDuplicate: boolean;
   rootActions?: RootNodeActionProps;
   onChangeRecipe?: () => void;
@@ -5440,6 +5478,7 @@ function CompactItemNodeView({
         byproductCoverage &&
           byproductCoverage.remainingAmount > 0 &&
           styles.nodeByproductPartial,
+        collapsedBranch && styles.nodeCollapsedBranch,
         deferredDuplicate && styles.nodeDeferredRecipe,
         isRoot && !radialRoot && styles.compactRootNode,
         radialRoot && styles.radialRootNode,
@@ -5512,6 +5551,7 @@ function ItemNodeView({
   byproductCoverage,
   isRoot,
   expandable,
+  collapsedBranch,
   deferredDuplicate,
   terminalLabel,
   showAmounts,
@@ -5527,6 +5567,8 @@ function ItemNodeView({
   byproductCoverage?: NodeByproductCoverage;
   isRoot: boolean;
   expandable: boolean;
+  /** Not expanded, but a remembered recipe means there is a tree folded under it. */
+  collapsedBranch: boolean;
   deferredDuplicate: boolean;
   terminalLabel: string;
   showAmounts: boolean;
@@ -5584,6 +5626,7 @@ function ItemNodeView({
         byproductCoverage &&
           byproductCoverage.remainingAmount > 0 &&
           styles.nodeByproductPartial,
+        collapsedBranch && styles.nodeCollapsedBranch,
         deferredDuplicate && styles.nodeDeferredRecipe,
         isRoot && styles.nodeRoot,
         isRoot && rootActions && styles.rootNodeSelected,
@@ -5798,6 +5841,10 @@ function SourceNodeView({
         onPress={isRoot ? undefined : handlers.press}
         onLongPress={isRoot ? undefined : handlers.longPress}
         delayLongPress={450}
+        // The strip is SOURCE_HEADER tall, well under a finger's worth, and it is the only way to
+        // collapse an expanded recipe. Extending the touch area leaves the layout alone, and the
+        // swap and info buttons inside it keep their own taps.
+        hitSlop={Platform.OS === 'web' ? undefined : {top: 8, bottom: 10, left: 8, right: 8}}
         style={styles.sourceHeader}>
         {isRoot ? (
           <View style={styles.rootSourceIconFrame}>
@@ -6269,6 +6316,13 @@ const styles = StyleSheet.create({
     borderColor: theme.warn,
     borderStyle: 'dashed',
     backgroundColor: '#332b17',
+  },
+  /** Has a remembered recipe but is not expanded: something is folded away under it. */
+  nodeCollapsedBranch: {
+    borderColor: theme.accent,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    backgroundColor: theme.panelAlt,
   },
   nodeCyclic: {borderColor: theme.warn},
   nodeTerminal: {borderColor: theme.textDim, borderWidth: 2},
