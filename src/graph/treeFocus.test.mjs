@@ -113,3 +113,25 @@ test('a phone reaches the graph options through an overlay, not a bar on the can
   // Totals outlive the sheet on a phone: it is dismissed before the panel is looked at.
   assert.match(source, /\(Platform\.OS !== 'web' \|\| showGraphControls\) &&/u);
 });
+
+test('every GraphScreen hook runs before its empty-tree return', () => {
+  // A hook placed after a conditional return runs only on the renders that get past it, which
+  // React refuses to draw: "rendered more hooks than during the previous render". tsc cannot see
+  // this, and it only appears once a tree is missing, which is exactly when the graph is opened.
+  const source = readFileSync(new URL('./GraphScreen.tsx', import.meta.url), 'utf8');
+  const componentStart = source.indexOf('export function GraphScreen(');
+  assert.ok(componentStart > 0, 'GraphScreen is no longer a recognizable function component');
+  const guard = source.indexOf('if (!graphRootKey || !root) {', componentStart);
+  assert.ok(guard > 0, 'GraphScreen no longer returns early for an empty tree');
+
+  // Everything from the guard to the end of GraphScreen's own body, stopping at the next
+  // top-level declaration so other components' hooks are not counted.
+  const nextComponent = source.indexOf('\nfunction ', guard);
+  const tail = source.slice(guard, nextComponent > 0 ? nextComponent : undefined);
+  const offenders = [...tail.matchAll(/^ {2}(?:const|let)?\s*.*\buse(?:Memo|Callback|State|Effect|Ref)\(/gmu)];
+  assert.deepEqual(
+    offenders.map(match => match[0].trim()),
+    [],
+    'GraphScreen calls a hook after its empty-tree return',
+  );
+});

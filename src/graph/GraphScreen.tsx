@@ -3564,33 +3564,9 @@ export function GraphScreen({
     />
   );
 
-  if (!graphRootKey || !root) {
-    return (
-      <View style={styles.emptyWrap}>
-        <Text style={styles.emptyTitle}>No item selected</Text>
-        <Text style={styles.emptyText}>
-          Open an item and tap one of its recipe cards to start a crafting tree. Tap nodes to
-          expand how each item is obtained — recipes, mining, or mob drops.
-        </Text>
-        <TouchableOpacity
-          {...signalTarget('graph.empty.browse-items')}
-          style={styles.emptyBtn}
-          onPress={() => setTab('items')}>
-          <Text style={styles.emptyBtnText}>Browse items</Text>
-        </TouchableOpacity>
-        {treeShareModal}
-      </View>
-    );
-  }
-
-  const rootNodeActions: RootNodeActionProps | undefined = showRootActions
-    ? {
-        amount: root.productionPlan?.amount ?? root.amount ?? 1,
-        onAmountChange: updateRootRequestedAmount,
-        onChangeRecipe: () => openRootPicker('inputs'),
-        onAddUsedBy: () => openRootPicker('outputs'),
-    }
-    : undefined;
+  // Declared above the empty-tree return below: a hook after a conditional return runs only
+  // on the renders that get past it, which React reports as rendering more hooks than the
+  // previous render and refuses to draw.
   const graphSettingOptions = useMemo<GraphSettingOption[]>(() => {
     const closeAfter = (run: () => void) => () => {
       onToggleGraphControls();
@@ -3714,6 +3690,33 @@ export function GraphScreen({
     updateExpandRecipesOnce,
   ]);
 
+  if (!graphRootKey || !root) {
+    return (
+      <View style={styles.emptyWrap}>
+        <Text style={styles.emptyTitle}>No item selected</Text>
+        <Text style={styles.emptyText}>
+          Open an item and tap one of its recipe cards to start a crafting tree. Tap nodes to
+          expand how each item is obtained — recipes, mining, or mob drops.
+        </Text>
+        <TouchableOpacity
+          {...signalTarget('graph.empty.browse-items')}
+          style={styles.emptyBtn}
+          onPress={() => setTab('items')}>
+          <Text style={styles.emptyBtnText}>Browse items</Text>
+        </TouchableOpacity>
+        {treeShareModal}
+      </View>
+    );
+  }
+
+  const rootNodeActions: RootNodeActionProps | undefined = showRootActions
+    ? {
+        amount: root.productionPlan?.amount ?? root.amount ?? 1,
+        onAmountChange: updateRootRequestedAmount,
+        onChangeRecipe: () => openRootPicker('inputs'),
+        onAddUsedBy: () => openRootPicker('outputs'),
+    }
+    : undefined;
   const graphMenuScaleStyle =
     Platform.OS === 'web'
       ? ({zoom: interfaceZoom} as unknown as object)
