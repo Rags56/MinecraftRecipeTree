@@ -8,6 +8,7 @@ import {
   ROOT_ATTACHED_ACTIONS_WIDTH,
   sourceNodeSize,
 } from './layout.ts';
+import {visibleInputs} from './treeFocus.ts';
 import type {ItemTreeNode} from './model.ts';
 
 const FULL_TURN = Math.PI * 2;
@@ -285,6 +286,7 @@ function flattenRadialTree(
   isTerminal: (item: ItemTreeNode) => boolean,
   showLabels: boolean,
   showRootActions: boolean,
+  visibleNodeIds?: ReadonlySet<string>,
 ): RadialUnit[] {
   const rootUnit = makeRadialUnit(root, 0, null, -1, false);
   if (compact) {
@@ -334,7 +336,7 @@ function flattenRadialTree(
   while (expansionStack.length > 0) {
     const parentIndex = expansionStack.pop()!;
     const parent = units[parentIndex];
-    const inputs = parent.item.source?.inputs ?? [];
+    const inputs = visibleInputs(parent.item, visibleNodeIds);
     for (const input of inputs) {
       const child = makeRadialUnit(
         input,
@@ -987,6 +989,8 @@ export function layoutRadialTree(
   isTerminal: (item: ItemTreeNode) => boolean = () => false,
   showLabels = false,
   showRootActions = false,
+  /** Restricts the tree to one focused branch; undefined draws every child. */
+  visibleNodeIds?: ReadonlySet<string>,
 ): GraphLayout {
   const units = flattenRadialTree(
     root,
@@ -994,6 +998,7 @@ export function layoutRadialTree(
     isTerminal,
     showLabels,
     showRootActions,
+    visibleNodeIds,
   );
   calculateAngularSectors(units);
 

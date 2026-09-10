@@ -174,6 +174,8 @@ import {
   recipeExpansionIdentity,
 } from './expansionOwnership';
 import {isEmcTransmutationSource, isRecursiveItemNode, makeRoot} from './model';
+import {treeFocus} from './treeFocus';
+import {ExpansionBudget} from './expansionBudget';
 import type {
   DeferredRecipeExpansion,
   ItemTreeNode,
@@ -724,6 +726,7 @@ export function GraphScreen({
   // cannot assume a fixed single-row height without ending up underneath the buttons.
   const [controlsHeight, setControlsHeight] = useState(0);
   const [showMoreControls, setShowMoreControls] = useState(false);
+  const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [useByproducts, setUseByproducts] = useState(loadUseByproducts);
   const [expandRecipesOnce, setExpandRecipesOnce] = useState(loadExpandRecipesOnce);
   const expandRecipesOnceRef = useRef(expandRecipesOnce);
@@ -1008,7 +1011,14 @@ export function GraphScreen({
     [data.descriptor],
   );
 
-  const applyChoiceRef = useRef<((node: ItemTreeNode, choice: SourceChoice) => void) | null>(null);
+  const applyChoiceRef = useRef<
+    | ((
+        node: ItemTreeNode,
+        choice: SourceChoice,
+        options?: {renderUpdates?: boolean; expansionBudget?: ExpansionBudget},
+      ) => void)
+    | null
+  >(null);
 
   const expandRecipe = useCallback(
     async (
@@ -1020,12 +1030,15 @@ export function GraphScreen({
         recordHistory = true,
         ingredientSelections,
         renderUpdates = true,
+        expansionBudget,
       }: {
         allowFluidTransfer?: boolean;
         expandPreferredChildren?: boolean;
         recordHistory?: boolean;
         ingredientSelections?: IngredientSelections;
         renderUpdates?: boolean;
+        /** Present only for the automatic cascade; a deliberate Auto expand passes none. */
+        expansionBudget?: ExpansionBudget;
       } = {},
     ): Promise<boolean> => {
       node.loading = true;
@@ -1169,13 +1182,21 @@ export function GraphScreen({
           });
         }
         if (expandPreferredChildren) {
+          // The budget learns the tree's width from each level as it lands, so a pack that
+          // branches ten ways stops after two levels while a near-linear chain keeps going.
+          expansionBudget?.record(children.length);
           for (const child of children) {
             if (child.cyclic) continue;
+            if (expansionBudget && !expansionBudget.allowsDepth(child.ancestors.length)) {
+              continue;
+            }
             const preferred =
               graphDirection === 'inputs'
                 ? preferredSourceFor(child.key, child.alternatives)
                 : null;
-            if (preferred) applyChoiceRef.current?.(child, preferred);
+            if (preferred) {
+              applyChoiceRef.current?.(child, preferred, {expansionBudget});
+            }
           }
         }
         return true;
@@ -1214,10 +1235,12 @@ export function GraphScreen({
         expandPreferredChildren = true,
         renderUpdates = true,
         recordHistory = true,
+        expansionBudget,
       }: {
         expandPreferredChildren?: boolean;
         renderUpdates?: boolean;
         recordHistory?: boolean;
+        expansionBudget?: ExpansionBudget;
       } = {},
     ): Promise<boolean> => {
       const identity = recipeExpansionIdentity(node.key, graphDirection, choice);
@@ -1255,6 +1278,7 @@ export function GraphScreen({
           expandPreferredChildren,
           renderUpdates,
           recordHistory,
+          expansionBudget,
         });
         if (!expanded) {
           console.error('The requested recipe expansion could not claim its graph position.', {
@@ -1277,11 +1301,14 @@ export function GraphScreen({
     (
       node: ItemTreeNode,
       choice: SourceChoice,
-      {renderUpdates = true}: {renderUpdates?: boolean} = {},
+      {renderUpdates = true, expansionBudget}: {
+        renderUpdates?: boolean;
+        expansionBudget?: ExpansionBudget;
+      } = {},
     ) => {
       if (blockRecursiveExpansion(node, 'apply source choice')) return;
       if (choice.t === 'recipe') {
-        void applyRecipeChoice(node, choice, {renderUpdates});
+        void applyRecipeChoice(node, choice, {renderUpdates, expansionBudget});
         return;
       }
       node.deferredRecipeExpansion = undefined;
@@ -2285,7 +2312,7 @@ export function GraphScreen({
       if (graphDirection === 'inputs') {
         setPreferredSource(graphRootKey, requestedChoice);
       }
-      applyChoice(newRoot, requestedChoice);
+      applyChoice(newRoot, requestedChoice, {expansionBudget: new ExpansionBudget()});
       return;
     }
     // An imported tree owns this fresh root. Its selections are resolved and
@@ -2294,7 +2321,7 @@ export function GraphScreen({
     const choices = choicesFor(graphRootKey);
     const preferred = preferredSourceFor(graphRootKey);
     if (preferred) {
-      applyChoice(newRoot, preferred);
+      applyChoice(newRoot, preferred, {expansionBudget: new ExpansionBudget()});
     } else if (choices.length === 1) {
       const onlyChoice = choices[0];
       applyOnlyChoiceWithErrorHandling(newRoot, onlyChoice);
@@ -2319,11 +2346,36 @@ export function GraphScreen({
     persistGraphSession(data.descriptor, root, graphDirection);
   }, [data.descriptor, graphDirection, root, version]);
 
+  // Recomputed against `version` so a focus survives the branch under it being expanded, and
+  // resolves to null the moment its node stops existing rather than blanking the canvas.
+  const focus = useMemo(
+    () => treeFocus(root, focusNodeId),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- version tracks in-place tree edits.
+    [root, focusNodeId, version],
+  );
+  const focusVisibleNodeIds = focus?.visibleNodeIds;
+  const focusLabel = useMemo(() => {
+    const focusedKey = focus?.pathKeys[focus.pathKeys.length - 1];
+    if (!focusedKey) return null;
+    return data.itemsByKey.get(focusedKey)?.n ?? focusedKey;
+  }, [data.itemsByKey, focus]);
+  const focusBranch = useCallback((node: ItemTreeNode) => {
+    setFocusNodeId(current => (current === node.id ? null : node.id));
+    setNodeMenu(null);
+    needsFitRef.current = true;
+  }, []);
+  const clearFocus = useCallback(() => {
+    setFocusNodeId(null);
+    needsFitRef.current = true;
+  }, []);
+  // A rebuilt tree issues new node ids, so a focus from the previous one can never match.
+  useEffect(() => setFocusNodeId(null), [graphRequestId]);
+
   const graphLayout = useMemo(() => {
     if (!root) return {graph: null, fallback: null as string | null};
     if (!radialLayout) {
       return {
-        graph: layoutTree(root, compactMode, true, showRootActions),
+        graph: layoutTree(root, compactMode, true, showRootActions, focusVisibleNodeIds),
         fallback: null as string | null,
       };
     }
@@ -2337,6 +2389,7 @@ export function GraphScreen({
             : undefined,
           true,
           showRootActions,
+          focusVisibleNodeIds,
         ),
         fallback: null as string | null,
       };
@@ -2346,7 +2399,7 @@ export function GraphScreen({
         error,
       );
       return {
-        graph: layoutTree(root, compactMode, true, showRootActions),
+        graph: layoutTree(root, compactMode, true, showRootActions, focusVisibleNodeIds),
         fallback: 'This tree is too complex for Radial placement, so the standard layout is shown.',
       };
     }
@@ -2356,6 +2409,7 @@ export function GraphScreen({
       version,
       compactMode,
       radialLayout,
+      focusVisibleNodeIds,
       graphDirection,
       usagesFor,
       showRootActions,
@@ -4022,6 +4076,23 @@ export function GraphScreen({
         onPress={fitView}>
         <Text style={[styles.ctrlBtnText, styles.fitControlIcon]}>⛶</Text>
       </TouchableOpacity>
+      {focus && (
+        <TouchableOpacity
+          {...signalTarget('graph.focus.clear')}
+          accessibilityRole="button"
+          accessibilityLabel={`Focused on ${focusLabel}. Show the whole tree.`}
+          style={[
+            styles.focusChip,
+            controlsHeight > 0 ? {top: CONTROLS_TOP_INSET + controlsHeight + 6} : null,
+            graphMenuScaleStyle,
+          ]}
+          onPress={clearFocus}>
+          <Text style={[styles.focusChipText, noSelect]} numberOfLines={1}>
+            Focused: {focusLabel}
+          </Text>
+          <Text style={[styles.focusChipClear, noSelect]}>Show all ✕</Text>
+        </TouchableOpacity>
+      )}
       {graph && minimapVisible && (
         <GraphMinimap
           layout={graph}
@@ -4321,6 +4392,8 @@ export function GraphScreen({
           }
           onUnsetRecipe={() => unsetNodeRecipe(nodeMenu.node)}
           onCollapseRecipe={() => collapseNodeRecipe(nodeMenu.node)}
+          onFocusBranch={() => focusBranch(nodeMenu.node)}
+          isFocused={focusNodeId === nodeMenu.node.id}
           onToggleReusable={
             nodeMenuCanToggleReusable
               ? () => toggleNodeReusable(nodeMenu.node)
@@ -4751,6 +4824,8 @@ function NodeActionMenu({
   onAmountChange,
   onUnsetRecipe,
   onCollapseRecipe,
+  onFocusBranch,
+  isFocused,
   onToggleReusable,
 }: {
   node: ItemTreeNode;
@@ -4766,6 +4841,9 @@ function NodeActionMenu({
   onAmountChange?: (amount: number) => void;
   onUnsetRecipe: () => void;
   onCollapseRecipe: () => void;
+  onFocusBranch: () => void;
+  /** Focusing the node that is already focused is how the user gets the whole tree back. */
+  isFocused: boolean;
   onToggleReusable?: () => void;
 }) {
   const data = useData();
@@ -4899,6 +4977,20 @@ function NodeActionMenu({
                 </Text>
               </TouchableOpacity>
             )}
+            <TouchableOpacity
+              {...signalTarget('graph.node-menu.focus-branch')}
+              accessibilityRole="button"
+              style={styles.nodeActionButton}
+              onPress={onFocusBranch}>
+              <Text style={styles.nodeActionButtonText}>
+                {isFocused ? 'Show whole tree' : 'Focus this branch'}
+              </Text>
+              <Text style={styles.nodeActionButtonHint}>
+                {isFocused
+                  ? 'Bring back the branches hidden by this focus'
+                  : 'Hide every branch except this one and what it needs'}
+              </Text>
+            </TouchableOpacity>
             {hasSelectedRecipe && (
               <TouchableOpacity
                 {...signalTarget('graph.node-menu.collapse-recipe')}
@@ -6299,6 +6391,25 @@ const styles = StyleSheet.create({
     minWidth: 118,
     paddingHorizontal: 10,
   },
+  /** Sits under the controls, on the left, opposite the totals panel. */
+  focusChip: {
+    position: 'absolute',
+    top: 54,
+    left: CANVAS_EDGE_INSET,
+    maxWidth: '70%',
+    zIndex: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minHeight: Platform.OS === 'web' ? 32 : 44,
+    paddingHorizontal: 11,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.accent,
+    backgroundColor: 'rgba(23,29,38,0.97)',
+  },
+  focusChipText: {color: theme.text, fontSize: 12, fontWeight: '700', flexShrink: 1},
+  focusChipClear: {color: theme.accent, fontSize: 11, fontWeight: '700'},
   /** Opposite corner from the fit control, which is the other persistent canvas affordance. */
   minimap: {
     position: 'absolute',
