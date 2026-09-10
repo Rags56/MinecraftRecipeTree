@@ -1,5 +1,6 @@
 import React from 'react';
-import {Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {ModalCard} from './ModalCard';
 import {theme} from '../theme';
 
 const highlights = [
@@ -30,34 +31,24 @@ export function WelcomeModal({
   onClose: () => void;
   interfaceZoom?: number;
 }) {
-  const scaledCardStyle =
-    Platform.OS === 'web'
-      ? ({
-          zoom: interfaceZoom,
-          width: `${100 / interfaceZoom}%`,
-          maxWidth: 560 / interfaceZoom,
-          maxHeight: `${86 / interfaceZoom}%`,
-        } as unknown as object)
-      : null;
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={[styles.card, scaledCardStyle]} onPress={() => {}}>
-          <View style={styles.header}>
-            <View style={styles.headerCopy}>
-              <Text style={styles.title}>Welcome to Recipe Tree</Text>
-              <Text style={styles.subtitle}>A quick look at what you can do</Text>
-            </View>
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Close welcome guide"
-              onPress={onClose}
-              style={styles.closeButton}>
-              <Text style={styles.closeText}>✕</Text>
-            </TouchableOpacity>
-          </View>
 
-          <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+  return (
+    <ModalCard
+      visible={visible}
+      onClose={onClose}
+      title="Welcome to Recipe Tree"
+      subtitle="A quick look at what you can do"
+      closeAccessibilityLabel="Close welcome guide"
+      interfaceZoom={interfaceZoom}
+      maxWidth={560}
+      footer={
+        <TouchableOpacity
+          accessibilityRole="button"
+          style={styles.getStartedButton}
+          onPress={onClose}>
+          <Text style={styles.getStartedText}>Get started</Text>
+        </TouchableOpacity>
+      }>
             <View style={styles.highlightList}>
               {highlights.map(highlight => (
                 <View key={highlight.title} style={styles.highlightRow}>
@@ -66,46 +57,11 @@ export function WelcomeModal({
                 </View>
               ))}
             </View>
-          </ScrollView>
-
-          <TouchableOpacity
-            accessibilityRole="button"
-            style={styles.getStartedButton}
-            onPress={onClose}>
-            <Text style={styles.getStartedText}>Get started</Text>
-          </TouchableOpacity>
-        </Pressable>
-      </Pressable>
-    </Modal>
+    </ModalCard>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.68)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-  },
-  card: {
-    width: '100%',
-    maxWidth: 560,
-    maxHeight: '86%' as never,
-    backgroundColor: theme.panel,
-    borderColor: theme.border,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 14,
-  },
-  header: {flexDirection: 'row', alignItems: 'flex-start', gap: 12},
-  headerCopy: {flex: 1},
-  title: {color: theme.text, fontSize: 17, fontWeight: '700'},
-  subtitle: {color: theme.textDim, fontSize: 11, marginTop: 3},
-  closeButton: {padding: 6},
-  closeText: {color: theme.textDim, fontSize: 15},
-  scroll: {flexShrink: 1, minHeight: 0, marginTop: 14},
-  content: {paddingBottom: 2},
   highlightList: {gap: 12},
   highlightRow: {
     paddingVertical: 8,

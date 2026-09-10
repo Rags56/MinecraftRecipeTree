@@ -1,14 +1,6 @@
-import {Modal} from '../ui/nativeUiScale';
 import React from 'react';
-import {
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {ModalCard} from './ModalCard';
 import {theme} from '../theme';
 import type {GitHubIssueKind} from './githubIssues';
 
@@ -101,126 +93,76 @@ export function GraphGuideModal({
   onOpenIssueReport(kind: GitHubIssueKind): void;
   interfaceZoom?: number;
 }) {
-  const scaledCardStyle =
-    Platform.OS === 'web'
-      ? ({
-          zoom: interfaceZoom,
-          width: `${100 / interfaceZoom}%`,
-          maxWidth: 620 / interfaceZoom,
-          maxHeight: `${86 / interfaceZoom}%`,
-        } as unknown as object)
-      : null;
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={[styles.card, scaledCardStyle]} onPress={() => {}}>
-          <View style={styles.header}>
-            <View style={styles.headerCopy}>
-              <Text style={styles.title}>Graph guide</Text>
-              <Text style={styles.subtitle}>How to navigate the tree and read node outlines</Text>
-            </View>
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Close graph guide"
-              onPress={onClose}
-              style={styles.closeButton}>
-              <Text style={styles.closeText}>✕</Text>
-            </TouchableOpacity>
+    <ModalCard
+      visible={visible}
+      onClose={onClose}
+      title="Graph guide"
+      subtitle="How to navigate the tree and read node outlines"
+      closeAccessibilityLabel="Close graph guide"
+      interfaceZoom={interfaceZoom}>
+      <Text style={styles.sectionTitle}>Controls</Text>
+      <View style={styles.controlList}>
+        {controls.map(control => (
+          <View key={control.title} style={styles.controlRow}>
+            <Text style={styles.controlTitle}>{control.title}</Text>
+            <Text style={styles.description}>{control.description}</Text>
           </View>
+        ))}
+      </View>
 
-          <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-            <Text style={styles.sectionTitle}>Controls</Text>
-            <View style={styles.controlList}>
-              {controls.map(control => (
-                <View key={control.title} style={styles.controlRow}>
-                  <Text style={styles.controlTitle}>{control.title}</Text>
-                  <Text style={styles.description}>{control.description}</Text>
-                </View>
-              ))}
+      <Text style={[styles.sectionTitle, styles.keyTitle]}>Visual key</Text>
+      <View style={styles.keyList}>
+        {visualKey.map(entry => (
+          <View key={entry.variant} style={styles.keyRow}>
+            <View style={styles.swatchFrame}>
+              <View
+                style={[
+                  styles.swatch,
+                  entry.variant === 'root' && styles.swatchRoot,
+                  entry.variant === 'terminal' && styles.swatchTerminal,
+                  entry.variant === 'recursive' && styles.swatchRecursive,
+                  entry.variant === 'transfer' && styles.swatchTransfer,
+                  entry.variant === 'complete' && styles.swatchComplete,
+                  entry.variant === 'partial' && styles.swatchPartial,
+                ]}
+              />
             </View>
+            <View style={styles.keyCopy}>
+              <Text style={styles.controlTitle}>{entry.title}</Text>
+              <Text style={styles.description}>{entry.description}</Text>
+            </View>
+          </View>
+        ))}
+      </View>
 
-            <Text style={[styles.sectionTitle, styles.keyTitle]}>Visual key</Text>
-            <View style={styles.keyList}>
-              {visualKey.map(entry => (
-                <View key={entry.variant} style={styles.keyRow}>
-                  <View style={styles.swatchFrame}>
-                    <View
-                      style={[
-                        styles.swatch,
-                        entry.variant === 'root' && styles.swatchRoot,
-                        entry.variant === 'terminal' && styles.swatchTerminal,
-                        entry.variant === 'recursive' && styles.swatchRecursive,
-                        entry.variant === 'transfer' && styles.swatchTransfer,
-                        entry.variant === 'complete' && styles.swatchComplete,
-                        entry.variant === 'partial' && styles.swatchPartial,
-                      ]}
-                    />
-                  </View>
-                  <View style={styles.keyCopy}>
-                    <Text style={styles.controlTitle}>{entry.title}</Text>
-                    <Text style={styles.description}>{entry.description}</Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-
-            <Text style={[styles.sectionTitle, styles.feedbackTitle]}>GitHub Issues</Text>
-            <Text style={styles.feedbackIntro}>
-              Report a problem or suggest an improvement directly to the project repository.
-              Recipe Tree includes the current pack and device diagnostics automatically.
-            </Text>
-            <View style={styles.feedbackChoiceRow}>
-              <TouchableOpacity
-                style={styles.feedbackChoice}
-                onPress={() => onOpenIssueReport('bug')}
-                accessibilityRole="button"
-                accessibilityHint="Opens the Recipe Tree bug report form">
-                <Text style={styles.feedbackChoiceText}>Report a bug</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.feedbackChoice}
-                onPress={() => onOpenIssueReport('feedback')}
-                accessibilityRole="button"
-                accessibilityHint="Opens the Recipe Tree feedback form">
-                <Text style={styles.feedbackChoiceText}>Send feedback</Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.githubRequirement}>No GitHub account is required.</Text>
-          </ScrollView>
-        </Pressable>
-      </Pressable>
-    </Modal>
+      <Text style={[styles.sectionTitle, styles.feedbackTitle]}>GitHub Issues</Text>
+      <Text style={styles.feedbackIntro}>
+        Report a problem or suggest an improvement directly to the project repository.
+        Recipe Tree includes the current pack and device diagnostics automatically.
+      </Text>
+      <View style={styles.feedbackChoiceRow}>
+        <TouchableOpacity
+          style={styles.feedbackChoice}
+          onPress={() => onOpenIssueReport('bug')}
+          accessibilityRole="button"
+          accessibilityHint="Opens the Recipe Tree bug report form">
+          <Text style={styles.feedbackChoiceText}>Report a bug</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.feedbackChoice}
+          onPress={() => onOpenIssueReport('feedback')}
+          accessibilityRole="button"
+          accessibilityHint="Opens the Recipe Tree feedback form">
+          <Text style={styles.feedbackChoiceText}>Send feedback</Text>
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.githubRequirement}>No GitHub account is required.</Text>
+    </ModalCard>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.68)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-  },
-  card: {
-    width: '100%',
-    maxWidth: 620,
-    maxHeight: '86%' as never,
-    backgroundColor: theme.panel,
-    borderColor: theme.border,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 14,
-  },
-  header: {flexDirection: 'row', alignItems: 'flex-start', gap: 12},
-  headerCopy: {flex: 1},
-  title: {color: theme.text, fontSize: 17, fontWeight: '700'},
-  subtitle: {color: theme.textDim, fontSize: 11, marginTop: 3},
-  closeButton: {padding: 6},
-  closeText: {color: theme.textDim, fontSize: 15},
-  // The card is capped by maxHeight but sized by its content, so without letting this shrink the
-  // ScrollView believes everything fits: the overflow is simply clipped and nothing scrolls.
-  scroll: {flexShrink: 1, minHeight: 0, marginTop: 14},
-  content: {paddingBottom: 2},
   sectionTitle: {
     color: theme.textDim,
     fontSize: 10,

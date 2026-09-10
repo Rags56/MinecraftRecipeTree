@@ -99,7 +99,7 @@ test('reports file-saving and finalization after archive reading reaches 100%', 
     value: {
       serviceWorker: {
         controller: {
-          scriptURL: 'https://viewer.example/local-pack-sw.js?v=packed-images-v1',
+          scriptURL: 'https://viewer.example/local-pack-sw.js?v=packed-images-and-shell-v1',
         },
         ready: Promise.resolve(),
         async register() {},

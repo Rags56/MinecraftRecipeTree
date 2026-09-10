@@ -92,9 +92,11 @@ test('mobile information and app menus are mutually exclusive', () => {
 });
 
 test('graph retry discards only the broken active snapshot and rebuilds the same output', () => {
+  // Rebuilding is now per-tree: several trees are open at once, and retrying one of them must
+  // not disturb the others, so recovery targets that tree's own id and direction.
   assert.match(
     appSource,
-    /onRetry=\{recovery => \{[\s\S]*?clearGraphSession\(data\.descriptor\);[\s\S]*?ui\.restoreGraph\(ui\.graphRootKey, ui\.graphDirection\);/u,
+    /onRetry=\{recovery => \{[\s\S]*?clearGraphSession\(data\.descriptor\);[\s\S]*?ui\.changeGraphDirection\(tree\.id, tree\.direction\);/u,
   );
   assert.match(
     appSource,

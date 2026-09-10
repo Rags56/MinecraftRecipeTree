@@ -1,14 +1,6 @@
-import {Modal} from '../ui/nativeUiScale';
 import React from 'react';
-import {
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {ModalCard} from '../components/ModalCard';
 import {theme} from '../theme';
 
 export interface AutoExpandSummaryEntry {
@@ -28,43 +20,29 @@ export function AutoExpandSummaryModal({
   onClose(): void;
 }) {
   const expandedCount = entries?.reduce((total, entry) => total + entry.count, 0) ?? 0;
-  const scaledCardStyle =
-    Platform.OS === 'web'
-      ? ({
-          zoom: interfaceZoom,
-          width: `${100 / interfaceZoom}%`,
-          maxWidth: 560 / interfaceZoom,
-          maxHeight: `${86 / interfaceZoom}%`,
-        } as unknown as object)
-      : null;
 
   return (
-    <Modal visible={entries !== null} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable
-          accessibilityViewIsModal
-          accessibilityLabel="Auto expand summary"
-          style={[styles.card, scaledCardStyle]}
-          onPress={() => {}}>
-          <View style={styles.header}>
-            <View style={styles.headerCopy}>
-              <Text style={styles.title}>Auto expand complete</Text>
-              <Text style={styles.subtitle}>
-                {expandedCount === 0
-                  ? 'No new recipes were expanded.'
-                  : `${expandedCount} recipe${expandedCount === 1 ? '' : 's'} expanded.`}
-              </Text>
-            </View>
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Close auto expand summary"
-              style={styles.closeButton}
-              onPress={onClose}>
-              <Text style={styles.closeText}>✕</Text>
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+    <ModalCard
+      visible={entries !== null}
+      onClose={onClose}
+      title="Auto expand complete"
+      subtitle={
+        expandedCount === 0
+          ? 'No new recipes were expanded.'
+          : `${expandedCount} recipe${expandedCount === 1 ? '' : 's'} expanded.`
+      }
+      closeAccessibilityLabel="Close auto expand summary"
+      interfaceZoom={interfaceZoom}
+      maxWidth={560}
+      accessibilityLabel="Auto expand summary"
+      footer={
+        <TouchableOpacity
+          accessibilityRole="button"
+          style={styles.doneButton}
+          onPress={onClose}>
+          <Text style={styles.doneButtonText}>Done</Text>
+        </TouchableOpacity>
+      }>
             <Text style={styles.sectionTitle}>How Auto Expand works</Text>
             <Text style={styles.explanation}>
               Existing branches stay unchanged. For each unexpanded ingredient, Recipe Tree uses
@@ -93,46 +71,11 @@ export function AutoExpandSummaryModal({
                 Every eligible node was already expanded or had no saved/community recipe.
               </Text>
             )}
-          </ScrollView>
-
-          <TouchableOpacity
-            accessibilityRole="button"
-            style={styles.doneButton}
-            onPress={onClose}>
-            <Text style={styles.doneButtonText}>Done</Text>
-          </TouchableOpacity>
-        </Pressable>
-      </Pressable>
-    </Modal>
+    </ModalCard>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-    backgroundColor: 'rgba(0,0,0,0.72)',
-  },
-  card: {
-    width: '100%',
-    maxWidth: 560,
-    maxHeight: '86%',
-    padding: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: theme.borderLight,
-    backgroundColor: theme.panel,
-  },
-  header: {flexDirection: 'row', alignItems: 'flex-start', gap: 10},
-  headerCopy: {flex: 1},
-  title: {color: theme.text, fontSize: 18, fontWeight: '800'},
-  subtitle: {color: theme.accent, fontSize: 11, marginTop: 3},
-  closeButton: {width: 32, height: 32, alignItems: 'center', justifyContent: 'center'},
-  closeText: {color: theme.textDim, fontSize: 16},
-  scroll: {flexShrink: 1, minHeight: 0, marginTop: 14},
-  content: {paddingBottom: 4},
   sectionTitle: {
     color: theme.textDim,
     fontSize: 10,

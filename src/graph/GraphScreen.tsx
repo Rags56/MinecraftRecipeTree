@@ -434,6 +434,14 @@ const USE_BYPRODUCTS_KEY = 'graphUseByproducts';
 const TREE_TOTALS_KEY = 'graphTreeTotals';
 /** Distance from the canvas top to the controls bar; panels below it clear it by measurement. */
 const CONTROLS_TOP_INSET = 10;
+const CANVAS_EDGE_INSET = 10;
+const FIT_CONTROL_SIZE = Platform.OS === 'web' ? 40 : 44;
+/**
+ * Bottom-edge notices start clear of the fit control in the corner and end at the opposite edge.
+ * They used to be placed by hand-counted offsets with no right bound at all, which reads fine on a
+ * desktop canvas and runs straight off the side of a phone.
+ */
+const BOTTOM_NOTICE_LEFT_INSET = CANVAS_EDGE_INSET + FIT_CONTROL_SIZE + 12;
 const EXPAND_RECIPES_ONCE_KEY = 'graphExpandRecipesOnce';
 const MAX_RECIPE_PICKER_CHOICES = 40;
 const RECIPE_PICKER_GROUP_PAGE = 40;
@@ -713,6 +721,7 @@ export function GraphScreen({
   // The controls wrap onto as many rows as the screen width forces, so the panels below them
   // cannot assume a fixed single-row height without ending up underneath the buttons.
   const [controlsHeight, setControlsHeight] = useState(0);
+  const [showMoreControls, setShowMoreControls] = useState(false);
   const [useByproducts, setUseByproducts] = useState(loadUseByproducts);
   const [expandRecipesOnce, setExpandRecipesOnce] = useState(loadExpandRecipesOnce);
   const expandRecipesOnceRef = useRef(expandRecipesOnce);
@@ -2091,36 +2100,40 @@ export function GraphScreen({
   );
 
   /**
-   * Collapses the whole tree back to just the root, reusing the exact same byproduct-release
-   * path a single node's collapse (onItemTap, above) uses -- releaseByproductFulfillments already
-   * walks the entire removed subtree, so one call correctly unwinds every descendant's reserved
-   * byproduct credit. Descendants keep their remembered preferred sources (that's what makes
-   * re-expanding a branch fast), but the root's own base recipe is forgotten here: it is both
-   * remembered as a favorite and carried on the open tree itself, so leaving either in place
-   * brings the recipe the user just cleared straight back on the next expand or remount.
+   * Discards the tree outright rather than collapsing it back to a bare root: a lone root node
+   * left sitting on the canvas is not a cleared workspace, and re-expanding it was one tap away
+   * from everything the user just asked to be rid of. Three things have to go together or the
+   * tree comes back -- the open tree itself, the saved session that would restore it on the next
+   * launch, and the root's remembered base recipe, which is also what reopening that item would
+   * silently re-expand. Descendants keep their remembered sources; those are a per-item
+   * preference, not part of this workspace.
    */
   const clearAllExpansions = useCallback(() => {
     const currentRoot = rootRef.current;
-    if (!currentRoot) return;
-    if (currentRoot.source) releaseByproductFulfillmentsFromSubtree(currentRoot);
-    currentRoot.source = undefined;
-    currentRoot.deferredRecipeExpansion = undefined;
-    if (preferredSourcesRef.current[currentRoot.key]) {
-      // Local-only removal: forgetting the root here is part of clearing this tree, not the user
-      // un-favoriting the recipe everywhere (that's unsetNodeRecipe, which also syncs the change).
-      const next = {...preferredSourcesRef.current};
-      delete next[currentRoot.key];
-      preferredSourcesRef.current = next;
-      persistPreferredSources(data.descriptor, next);
-      setPreferredSources(next);
+    if (currentRoot) {
+      if (currentRoot.source) releaseByproductFulfillmentsFromSubtree(currentRoot);
+      currentRoot.source = undefined;
+      currentRoot.deferredRecipeExpansion = undefined;
+      if (preferredSourcesRef.current[currentRoot.key]) {
+        // Local-only removal: forgetting the root here is part of clearing this tree, not the user
+        // un-favoriting the recipe everywhere (that's unsetNodeRecipe, which also syncs it).
+        const next = {...preferredSourcesRef.current};
+        delete next[currentRoot.key];
+        preferredSourcesRef.current = next;
+        persistPreferredSources(data.descriptor, next);
+        setPreferredSources(next);
+      }
     }
     clearGraphTreeRecipe(treeId);
-    bump();
-    needsFitRef.current = true;
+    clearGraphSession(data.descriptor);
+    // Suppresses the persist effect, which would otherwise write this tree straight back out on
+    // the render that follows.
+    restoringGraphSessionRef.current = true;
+    onClose?.();
   }, [
-    bump,
     clearGraphTreeRecipe,
     data.descriptor,
+    onClose,
     releaseByproductFulfillmentsFromSubtree,
     treeId,
   ]);
@@ -3827,49 +3840,15 @@ export function GraphScreen({
                 updateExpandRecipesOnce(!expandRecipesOnce);
               }}
             />
-            {graphDirection === 'inputs' && !/^local-[a-f0-9]{16}$/u.test(data.descriptor.slug) && (
-              <CtrlBtn
-                label={
-                  communityAutoExpandLoading
-                    ? communityAutoExpand
-                      ? 'Expanding…'
-                      : 'Loading…'
-                    : communityAutoExpand
-                      ? 'Auto expand on'
-                      : 'Auto expand'
-                }
-                accessibilityLabel={
-                  communityAutoExpand
-                    ? 'Stop automatically expanding community favorite recipes'
-                    : 'Automatically expand community favorite recipes'
-                }
-                metricsId="graph.control.community-auto-expand"
-                active={communityAutoExpand}
-                onPress={() => void toggleCommunityAutoExpand()}
-              />
-            )}
+            {/* Everything past this point is an action rather than a view toggle, and none of it
+                is reached often enough to earn a permanent row across a phone's canvas. */}
             <CtrlBtn
-              label="Share"
-              metricsId="graph.control.share"
-              onPress={() => {
-                setTreeTransferMode('share');
-                setShowTreeShare(true);
-              }}
+              label="More ⋯"
+              accessibilityLabel={showMoreControls ? 'Hide more graph actions' : 'Show more graph actions'}
+              metricsId="graph.control.more"
+              active={showMoreControls}
+              onPress={() => setShowMoreControls(value => !value)}
             />
-            <CtrlBtn
-              label="Clear all"
-              accessibilityLabel="Collapse every expanded branch back to the root item"
-              metricsId="graph.control.clear-all"
-              onPress={clearAllExpansions}
-            />
-            {onClose && openTreeCount > 1 && (
-              <CtrlBtn
-                label="Close tree"
-                accessibilityLabel="Close this recipe tree"
-                metricsId="graph.control.close-tree"
-                onPress={onClose}
-              />
-            )}
           </View>
         )}
         <TouchableOpacity
@@ -3897,6 +3876,65 @@ export function GraphScreen({
           </View>
         </TouchableOpacity>
       </View>
+      {showGraphControls && showMoreControls && (
+        <View
+          style={[
+            styles.moreControls,
+            controlsHeight > 0 ? {top: CONTROLS_TOP_INSET + controlsHeight + 6} : null,
+            graphMenuScaleStyle,
+          ]}>
+          {graphDirection === 'inputs' && !/^local-[a-f0-9]{16}$/u.test(data.descriptor.slug) && (
+            <CtrlBtn
+              label={
+                communityAutoExpandLoading
+                  ? communityAutoExpand
+                    ? 'Expanding…'
+                    : 'Loading…'
+                  : communityAutoExpand
+                    ? 'Auto expand on'
+                    : 'Auto expand'
+              }
+              accessibilityLabel={
+                communityAutoExpand
+                  ? 'Stop automatically expanding community favorite recipes'
+                  : 'Automatically expand community favorite recipes'
+              }
+              metricsId="graph.control.community-auto-expand"
+              active={communityAutoExpand}
+              onPress={() => void toggleCommunityAutoExpand()}
+            />
+          )}
+          <CtrlBtn
+            label="Share"
+            metricsId="graph.control.share"
+            onPress={() => {
+              setShowMoreControls(false);
+              setTreeTransferMode('share');
+              setShowTreeShare(true);
+            }}
+          />
+          <CtrlBtn
+            label="Clear all"
+            accessibilityLabel="Discard this recipe tree entirely"
+            metricsId="graph.control.clear-all"
+            onPress={() => {
+              setShowMoreControls(false);
+              clearAllExpansions();
+            }}
+          />
+          {onClose && openTreeCount > 1 && (
+            <CtrlBtn
+              label="Close tree"
+              accessibilityLabel="Close this recipe tree"
+              metricsId="graph.control.close-tree"
+              onPress={() => {
+                setShowMoreControls(false);
+                onClose();
+              }}
+            />
+          )}
+        </View>
+      )}
       {showLargeTreeUniqueNotice && (
         <View
           style={[styles.uniqueModeNotice, graphMenuScaleStyle]}
@@ -6009,8 +6047,9 @@ const styles = StyleSheet.create({
   },
   layoutFallbackNotice: {
     position: 'absolute',
-    left: 62,
-    bottom: 10,
+    left: BOTTOM_NOTICE_LEFT_INSET,
+    right: CANVAS_EDGE_INSET,
+    bottom: CANVAS_EDGE_INSET,
     maxWidth: 420,
     paddingHorizontal: 10,
     paddingVertical: 7,
@@ -6070,13 +6109,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
+  /** Overflow for the actions the toggles above no longer keep on the canvas permanently. */
+  moreControls: {
+    position: 'absolute',
+    top: 54,
+    left: 10,
+    right: 10,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    gap: 6,
+    padding: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: 'rgba(23,29,38,0.97)',
+  },
   uniqueModeNotice: {
     position: 'absolute',
-    right: 10,
-    bottom: 10,
+    left: BOTTOM_NOTICE_LEFT_INSET,
+    right: CANVAS_EDGE_INSET,
+    bottom: CANVAS_EDGE_INSET,
     zIndex: 30,
-    width: 390,
-    maxWidth: '92%',
+    maxWidth: 390,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
@@ -6190,9 +6245,11 @@ const styles = StyleSheet.create({
     borderColor: theme.border,
     borderWidth: 1,
     borderRadius: 8,
-    height: 36,
+    // 44 on touch platforms is the documented minimum target; the web pointer keeps the denser
+    // 36 so the bar does not grow on the surface that never had trouble hitting it.
+    height: Platform.OS === 'web' ? 36 : 44,
     paddingHorizontal: 10,
-    minWidth: 40,
+    minWidth: Platform.OS === 'web' ? 40 : 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -6211,9 +6268,9 @@ const styles = StyleSheet.create({
   },
   fitControl: {
     position: 'absolute',
-    left: 10,
-    bottom: 10,
-    width: 40,
+    left: CANVAS_EDGE_INSET,
+    bottom: CANVAS_EDGE_INSET,
+    width: FIT_CONTROL_SIZE,
     paddingHorizontal: 0,
   },
   fitControlIcon: {

@@ -1021,9 +1021,17 @@ function Shell({
             }>
             {data.indexStatus === 'ready' && openGraphTrees.length === 0 ? (
               <View style={styles.center}>
-                <Text style={styles.loadingText}>
-                  Open an item's recipe to start a tree.
+                <Text style={styles.graphEmptyTitle}>No tree open</Text>
+                <Text style={styles.graphEmptyText}>
+                  Pick an item and tap one of its recipe cards to start a crafting tree.
                 </Text>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Browse items to start a tree"
+                  style={styles.graphEmptyButton}
+                  onPress={() => setTab('items')}>
+                  <Text style={styles.graphEmptyButtonText}>Browse items</Text>
+                </TouchableOpacity>
               </View>
             ) : data.indexStatus === 'ready' ? (
               <ScrollView
@@ -1408,6 +1416,27 @@ const styles = StyleSheet.create({
   graphTreeScroller: {flex: 1},
   graphTreePage: {flex: 1},
   loadingText: {color: theme.textDim, marginTop: 14},
+  graphEmptyTitle: {color: theme.text, fontSize: 16, fontWeight: '700'},
+  graphEmptyText: {
+    color: theme.textDim,
+    fontSize: 12,
+    lineHeight: 18,
+    maxWidth: 320,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  graphEmptyButton: {
+    minHeight: 44,
+    marginTop: 16,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: theme.panelAlt,
+  },
+  graphEmptyButtonText: {color: theme.accent, fontSize: 13, fontWeight: '700'},
   deferredModalBackdrop: {
     flex: 1,
     alignItems: 'center',

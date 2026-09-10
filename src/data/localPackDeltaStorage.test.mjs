@@ -51,7 +51,7 @@ test('retains independently usable local versions across chained delta updates',
     value: {
       serviceWorker: {
         controller: {
-          scriptURL: 'https://viewer.example/local-pack-sw.js?v=packed-images-v1',
+          scriptURL: 'https://viewer.example/local-pack-sw.js?v=packed-images-and-shell-v1',
         },
         ready: Promise.resolve(),
         async register() {},
