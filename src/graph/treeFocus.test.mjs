@@ -103,3 +103,13 @@ test('turning focus mode off cannot strand an unreachable focus', () => {
   const toggle = source.slice(source.indexOf('const toggleFocusMode'));
   assert.match(toggle.slice(0, 400), /if \(!next\) setFocusNodeId\(null\);/u);
 });
+
+test('a phone reaches the graph options through an overlay, not a bar on the canvas', () => {
+  const source = readFileSync(new URL('./GraphScreen.tsx', import.meta.url), 'utf8');
+  // The inline row and its overflow are web-only; the canvas keeps only a gear on a phone.
+  assert.match(source, /\{showGraphControls && Platform\.OS === 'web' && \(/u);
+  assert.match(source, /showMoreControls && Platform\.OS === 'web' && \(/u);
+  assert.match(source, /Platform\.OS !== 'web' && \(\s*<GraphSettingsSheet/u);
+  // Totals outlive the sheet on a phone: it is dismissed before the panel is looked at.
+  assert.match(source, /\(Platform\.OS !== 'web' \|\| showGraphControls\) &&/u);
+});

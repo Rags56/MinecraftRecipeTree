@@ -163,6 +163,7 @@ import {
 } from './AutoExpandSummaryModal';
 import {LowDetailGraphCanvas} from './LowDetailGraphCanvas';
 import {GraphMinimap, MINIMAP_MAX_WIDTH} from './GraphMinimap';
+import {GraphSettingsSheet, type GraphSettingOption} from './GraphSettingsSheet';
 import {shouldShowMinimap, transformCenteredOn} from './minimap';
 import {autoExpandPreferredNodes} from './autoExpandTree';
 import {
@@ -3590,6 +3591,129 @@ export function GraphScreen({
         onAddUsedBy: () => openRootPicker('outputs'),
     }
     : undefined;
+  const graphSettingOptions = useMemo<GraphSettingOption[]>(() => {
+    const closeAfter = (run: () => void) => () => {
+      onToggleGraphControls();
+      run();
+    };
+    const options: GraphSettingOption[] = [];
+    if (graphDirection === 'inputs') {
+      options.push({
+        key: 'totals',
+        label: 'Tree totals',
+        description: 'Every raw material this tree needs, as a panel on the canvas',
+        kind: 'toggle',
+        active: showTreeTotals,
+        metricsId: 'graph.control.totals',
+        onPress: toggleTreeTotals,
+      });
+    }
+    options.push(
+      {
+        key: 'radial',
+        label: 'Radial layout',
+        description: 'Arrange the tree outward from its root instead of top to bottom',
+        kind: 'toggle',
+        active: radialLayout,
+        metricsId: 'graph.control.radial',
+        onPress: toggleRadialLayout,
+      },
+      {
+        key: 'compact',
+        label: 'Compact nodes',
+        description: 'Smaller nodes, so more of the tree fits on screen',
+        kind: 'toggle',
+        active: compactMode,
+        metricsId: 'graph.control.compact',
+        onPress: toggleCompactMode,
+      },
+      {
+        key: 'unique',
+        label: largeTreeUniqueModeRequired ? 'Unique recipes · Locked' : 'Unique recipes',
+        description: largeTreeUniqueModeRequired
+          ? 'Required while this tree is large enough to need it'
+          : 'Expand each recipe once, and mark duplicates instead of repeating them',
+        kind: 'toggle',
+        active: expandRecipesOnce,
+        metricsId: 'graph.control.expand-once',
+        onPress: () => {
+          if (largeTreeUniqueModeRequired) {
+            setShowLargeTreeUniqueNotice(true);
+            return;
+          }
+          updateExpandRecipesOnce(!expandRecipesOnce);
+        },
+      },
+    );
+    if (graphDirection === 'inputs' && !/^local-[a-f0-9]{16}$/u.test(data.descriptor.slug)) {
+      options.push({
+        key: 'auto-expand',
+        label: communityAutoExpandLoading
+          ? communityAutoExpand
+            ? 'Auto expand · Expanding…'
+            : 'Auto expand · Loading…'
+          : 'Auto expand',
+        description: 'Fill the tree in using the recipes other players favourited',
+        kind: 'toggle',
+        active: communityAutoExpand,
+        metricsId: 'graph.control.community-auto-expand',
+        onPress: () => void toggleCommunityAutoExpand(),
+      });
+    }
+    options.push(
+      {
+        key: 'share',
+        label: 'Share this tree',
+        description: 'Send the tree as a file, or open one you were sent',
+        kind: 'action',
+        metricsId: 'graph.control.share',
+        onPress: closeAfter(() => {
+          setTreeTransferMode('share');
+          setShowTreeShare(true);
+        }),
+      },
+      {
+        key: 'clear-all',
+        label: 'Clear all',
+        description: 'Discard this tree entirely',
+        kind: 'action',
+        destructive: true,
+        metricsId: 'graph.control.clear-all',
+        onPress: closeAfter(clearAllExpansions),
+      },
+    );
+    if (onClose && openTreeCount > 1) {
+      options.push({
+        key: 'close-tree',
+        label: 'Close this tree',
+        description: 'Leave the other open trees alone',
+        kind: 'action',
+        metricsId: 'graph.control.close-tree',
+        onPress: closeAfter(onClose),
+      });
+    }
+    return options;
+  }, [
+    clearAllExpansions,
+    communityAutoExpand,
+    communityAutoExpandLoading,
+    compactMode,
+    data.descriptor.slug,
+    expandRecipesOnce,
+    graphDirection,
+    largeTreeUniqueModeRequired,
+    onClose,
+    onToggleGraphControls,
+    openTreeCount,
+    radialLayout,
+    showTreeTotals,
+    toggleCommunityAutoExpand,
+    toggleCompactMode,
+    toggleRadialLayout,
+    toggleTreeTotals,
+    updateExpandRecipesOnce,
+  ]);
+
   const graphMenuScaleStyle =
     Platform.OS === 'web'
       ? ({zoom: interfaceZoom} as unknown as object)
@@ -3913,7 +4037,7 @@ export function GraphScreen({
           const {height} = event.nativeEvent.layout;
           setControlsHeight(current => (current === height ? current : height));
         }}>
-        {showGraphControls && (
+        {showGraphControls && Platform.OS === 'web' && (
           <View style={styles.controlOptions}>
             {graphDirection === 'inputs' && (
               <CtrlBtn
@@ -3981,29 +4105,41 @@ export function GraphScreen({
         <TouchableOpacity
           {...signalTarget('graph.control.menu')}
           accessibilityRole="button"
-          accessibilityLabel={showGraphControls ? 'Collapse graph controls' : 'Expand graph controls'}
+          accessibilityLabel={
+            Platform.OS === 'web'
+              ? showGraphControls
+                ? 'Collapse graph controls'
+                : 'Expand graph controls'
+              : 'Open graph settings'
+          }
           accessibilityState={{expanded: showGraphControls}}
           style={[
             styles.ctrlBtn,
             styles.controlMenuBtn,
-            !showGraphControls && styles.controlMenuBtnCollapsed,
-            showGraphControls && styles.ctrlBtnActive,
+            Platform.OS === 'web' && !showGraphControls && styles.controlMenuBtnCollapsed,
+            showGraphControls && Platform.OS === 'web' && styles.ctrlBtnActive,
           ]}
           onPress={onToggleGraphControls}>
           <View style={styles.ctrlBtnContent}>
-            {!showGraphControls && (
-              <Text style={[styles.ctrlBtnText, noSelect]}>Graph controls</Text>
+            {Platform.OS === 'web' ? (
+              <>
+                {!showGraphControls && (
+                  <Text style={[styles.ctrlBtnText, noSelect]}>Graph controls</Text>
+                )}
+                <DisclosureChevron
+                  expanded={showGraphControls}
+                  color={showGraphControls ? theme.accent : theme.text}
+                  size={18}
+                  strokeWidth={2.4}
+                />
+              </>
+            ) : (
+              <Text style={[styles.ctrlBtnText, styles.settingsGearIcon]}>⚙</Text>
             )}
-            <DisclosureChevron
-              expanded={showGraphControls}
-              color={showGraphControls ? theme.accent : theme.text}
-              size={18}
-              strokeWidth={2.4}
-            />
           </View>
         </TouchableOpacity>
       </View>
-      {showGraphControls && showMoreControls && (
+      {showGraphControls && showMoreControls && Platform.OS === 'web' && (
         <View
           style={[
             styles.moreControls,
@@ -4152,7 +4288,18 @@ export function GraphScreen({
           style={[styles.minimap, graphMenuScaleStyle] as object}
         />
       )}
-      {showGraphControls && graphDirection === 'inputs' && showTreeTotals && (
+      {Platform.OS !== 'web' && (
+        <GraphSettingsSheet
+          visible={showGraphControls}
+          options={graphSettingOptions}
+          onClose={onToggleGraphControls}
+        />
+      )}
+      {/* On web the panel belongs to the controls bar that opened it; on a phone the sheet has
+          already been dismissed by the time the panel is wanted. */}
+      {(Platform.OS !== 'web' || showGraphControls) &&
+        graphDirection === 'inputs' &&
+        showTreeTotals && (
         <TreeTotalsPanel
           interfaceZoom={interfaceZoom}
           top={controlsHeight > 0 ? CONTROLS_TOP_INSET + controlsHeight + 6 : undefined}
@@ -6224,6 +6371,9 @@ const styles = StyleSheet.create({
     right: 10,
     flexDirection: 'row',
     alignItems: 'flex-start',
+    // Without the inline options beside it, the gear is the row's only child and would otherwise
+    // sit against the left edge rather than in the corner a settings control belongs in.
+    justifyContent: Platform.OS === 'web' ? 'flex-start' : 'flex-end',
     gap: 6,
   },
   layoutFallbackNotice: {
@@ -6464,6 +6614,7 @@ const styles = StyleSheet.create({
     borderColor: theme.accent,
     backgroundColor: 'rgba(23,29,38,0.97)',
   },
+  settingsGearIcon: {fontSize: 19, lineHeight: 22},
   focusChipText: {color: theme.text, fontSize: 12, fontWeight: '700', flexShrink: 1},
   focusChipClear: {color: theme.accent, fontSize: 11, fontWeight: '700'},
   /** Opposite corner from the fit control, which is the other persistent canvas affordance. */
