@@ -131,7 +131,7 @@ const styles = StyleSheet.create({
   subtitle: {color: theme.accent, fontSize: 11, marginTop: 3},
   closeButton: {width: 32, height: 32, alignItems: 'center', justifyContent: 'center'},
   closeText: {color: theme.textDim, fontSize: 16},
-  scroll: {marginTop: 14},
+  scroll: {flexShrink: 1, minHeight: 0, marginTop: 14},
   content: {paddingBottom: 4},
   sectionTitle: {
     color: theme.textDim,

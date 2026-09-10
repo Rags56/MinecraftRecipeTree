@@ -104,7 +104,7 @@ const styles = StyleSheet.create({
   subtitle: {color: theme.textDim, fontSize: 11, marginTop: 3},
   closeButton: {padding: 6},
   closeText: {color: theme.textDim, fontSize: 15},
-  scroll: {marginTop: 14},
+  scroll: {flexShrink: 1, minHeight: 0, marginTop: 14},
   content: {paddingBottom: 2},
   highlightList: {gap: 12},
   highlightRow: {

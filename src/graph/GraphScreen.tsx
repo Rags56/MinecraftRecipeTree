@@ -431,6 +431,9 @@ const COMPACT_MODE_KEY = 'graphCompactMode';
 const RADIAL_LAYOUT_KEY = 'graphRadialLayout';
 const LEGACY_PACKED_LAYOUT_KEY = 'graphPackedLayout';
 const USE_BYPRODUCTS_KEY = 'graphUseByproducts';
+const TREE_TOTALS_KEY = 'graphTreeTotals';
+/** Distance from the canvas top to the controls bar; panels below it clear it by measurement. */
+const CONTROLS_TOP_INSET = 10;
 const EXPAND_RECIPES_ONCE_KEY = 'graphExpandRecipesOnce';
 const MAX_RECIPE_PICKER_CHOICES = 40;
 const RECIPE_PICKER_GROUP_PAGE = 40;
@@ -529,6 +532,17 @@ function loadRadialLayout(): boolean {
     return false;
   } catch (error) {
     console.error('Radial graph layout could not be loaded from localStorage.', error);
+    return false;
+  }
+}
+
+function loadShowTreeTotals(): boolean {
+  try {
+    // Defaults off: opening the graph controls should reveal the controls, not immediately bury
+    // them and most of a phone screen under a panel the user did not ask for.
+    return globalThis.localStorage?.getItem(TREE_TOTALS_KEY) === '1';
+  } catch (error) {
+    console.error('Tree totals preference could not be loaded from localStorage.', error);
     return false;
   }
 }
@@ -695,7 +709,10 @@ export function GraphScreen({
   const recipeImportRestoreAttemptedRef = useRef<number | null>(null);
   const [compactMode, setCompactMode] = useState(loadCompactMode);
   const [radialLayout, setRadialLayout] = useState(loadRadialLayout);
-  const [showTreeTotals, setShowTreeTotals] = useState(true);
+  const [showTreeTotals, setShowTreeTotals] = useState(loadShowTreeTotals);
+  // The controls wrap onto as many rows as the screen width forces, so the panels below them
+  // cannot assume a fixed single-row height without ending up underneath the buttons.
+  const [controlsHeight, setControlsHeight] = useState(0);
   const [useByproducts, setUseByproducts] = useState(loadUseByproducts);
   const [expandRecipesOnce, setExpandRecipesOnce] = useState(loadExpandRecipesOnce);
   const expandRecipesOnceRef = useRef(expandRecipesOnce);
@@ -3011,6 +3028,22 @@ export function GraphScreen({
     });
   }, [applyTransform]);
 
+  const toggleTreeTotals = useCallback(() => {
+    setShowTreeTotals(current => {
+      const next = !current;
+      try {
+        const storage = globalThis.localStorage;
+        if (storage) storage.setItem(TREE_TOTALS_KEY, next ? '1' : '0');
+        else if (Platform.OS === 'web') {
+          console.warn('Tree totals are using memory only because localStorage is unavailable.');
+        }
+      } catch (error) {
+        console.error('Tree totals preference could not be saved to localStorage.', error);
+      }
+      return next;
+    });
+  }, []);
+
   const toggleCompactMode = useCallback(() => {
     setCompactMode(current => {
       const next = !current;
@@ -3747,7 +3780,12 @@ export function GraphScreen({
         </View>
       )}
 
-      <View style={[styles.controls, graphMenuScaleStyle]}>
+      <View
+        style={[styles.controls, graphMenuScaleStyle]}
+        onLayout={event => {
+          const {height} = event.nativeEvent.layout;
+          setControlsHeight(current => (current === height ? current : height));
+        }}>
         {showGraphControls && (
           <View style={styles.controlOptions}>
             {graphDirection === 'inputs' && (
@@ -3757,7 +3795,7 @@ export function GraphScreen({
                 accessibilityLabel={showTreeTotals ? 'Collapse tree totals' : 'Expand tree totals'}
                 metricsId="graph.control.totals"
                 active={showTreeTotals}
-                onPress={() => setShowTreeTotals(value => !value)}
+                onPress={toggleTreeTotals}
               />
             )}
             <CtrlBtn
@@ -3925,6 +3963,7 @@ export function GraphScreen({
       {showGraphControls && graphDirection === 'inputs' && showTreeTotals && (
         <TreeTotalsPanel
           interfaceZoom={interfaceZoom}
+          top={controlsHeight > 0 ? CONTROLS_TOP_INSET + controlsHeight + 6 : undefined}
           totals={treeTotals}
           useByproducts={useByproducts}
           exportingTree={exportingTree}
@@ -4365,6 +4404,7 @@ function AttachedRootActions({
 
 function TreeTotalsPanel({
   interfaceZoom,
+  top,
   totals,
   useByproducts,
   exportingTree,
@@ -4376,6 +4416,8 @@ function TreeTotalsPanel({
   onOpenItem,
 }: {
   interfaceZoom: number;
+  /** Measured clearance below the controls, which wrap onto more rows as the screen narrows. */
+  top?: number;
   totals: TreeTotals;
   useByproducts: boolean;
   exportingTree: boolean;
@@ -4390,6 +4432,7 @@ function TreeTotalsPanel({
     <View
       style={[
         styles.totalsPanel,
+        top === undefined ? null : {top},
         Platform.OS === 'web'
           ? ({zoom: interfaceZoom} as unknown as object)
           : null,
@@ -5957,7 +6000,7 @@ const styles = StyleSheet.create({
     // box -- that width is what lets the options below wrap into extra rows instead of running
     // off the side of a narrow portrait screen.
     position: 'absolute',
-    top: 10,
+    top: CONTROLS_TOP_INSET,
     left: 10,
     right: 10,
     flexDirection: 'row',

@@ -217,7 +217,9 @@ const styles = StyleSheet.create({
   subtitle: {color: theme.textDim, fontSize: 11, marginTop: 3},
   closeButton: {padding: 6},
   closeText: {color: theme.textDim, fontSize: 15},
-  scroll: {marginTop: 14},
+  // The card is capped by maxHeight but sized by its content, so without letting this shrink the
+  // ScrollView believes everything fits: the overflow is simply clipped and nothing scrolls.
+  scroll: {flexShrink: 1, minHeight: 0, marginTop: 14},
   content: {paddingBottom: 2},
   sectionTitle: {
     color: theme.textDim,

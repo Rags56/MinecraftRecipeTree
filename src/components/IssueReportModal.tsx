@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
   subtitle: {marginTop: 3, color: theme.textDim, fontSize: 11, lineHeight: 16},
   closeButton: {padding: 6},
   closeText: {color: theme.textDim, fontSize: 15},
-  scroll: {marginTop: 16},
+  scroll: {flexShrink: 1, minHeight: 0, marginTop: 16},
   form: {gap: 14, paddingBottom: 2},
   kindToggle: {
     flexDirection: 'row',

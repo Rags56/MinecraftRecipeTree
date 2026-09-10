@@ -662,7 +662,7 @@ const styles = StyleSheet.create({
   sectionTitle: {marginTop: 16, color: theme.textDim, fontSize: 10, fontWeight: '800', letterSpacing: 0.7, textTransform: 'uppercase'},
   searchInput: {height: 38, marginTop: 10, paddingHorizontal: 11, borderRadius: 7, borderWidth: 1, borderColor: theme.border, color: theme.text, backgroundColor: theme.bg, fontSize: 12},
   cleanupError: {color: theme.danger, fontSize: 10, lineHeight: 14, marginTop: 8},
-  scroll: {marginTop: 6},
+  scroll: {flexShrink: 1, minHeight: 0, marginTop: 6},
   list: {paddingBottom: 4},
   favoriteGroup: {borderBottomWidth: 1, borderBottomColor: theme.border},
   row: {minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderBottomColor: theme.border},
