@@ -3,9 +3,9 @@ import {ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View}
 import {useData} from '../data/DataContext';
 import {theme} from '../theme';
 import type {Recipe} from '../types';
+import {MAXIMUM_CONTENT_ZOOM, MINIMUM_CONTENT_ZOOM, stepContentZoom} from '../ui/contentZoom';
 import {MAXIMUM_INTERFACE_ZOOM, MINIMUM_INTERFACE_ZOOM} from '../ui/interfaceZoom';
 import {useRenderedScale} from '../ui/nativeUiScale';
-import {ContentZoomControl} from './ContentZoomControl';
 import {ItemGridCell} from './ItemsScreen';
 import {RecipeCard} from './RecipeCard';
 
@@ -48,6 +48,12 @@ export function ScaleSettings({interfaceZoom, contentZoom, onInterfaceZoomChange
     });
     return () => {cancelled = true;};
   }, [categoryIndex, data.getRecipes, attempt]);
+  const stepContent = (direction: -1 | 1) => {
+    const next = stepContentZoom(contentZoom, direction);
+    if (next === contentZoom) return;
+    onContentZoomChange(next);
+    onContentZoomComplete(next);
+  };
   const columns = Math.max(1, Math.min(4, Math.floor((width - 24) * renderedScale / (104 * contentZoom))));
 
   return (
@@ -66,7 +72,18 @@ export function ScaleSettings({interfaceZoom, contentZoom, onInterfaceZoomChange
             </TouchableOpacity>
           </View>
         </View>
-        <ContentZoomControl appearance="toolbar" value={contentZoom} onValueChange={onContentZoomChange} onSlidingComplete={onContentZoomComplete} style={s.slider} />
+        <View style={s.row}>
+          <View style={s.grow}><Text style={s.label}>Recipe/items scale</Text><Text style={s.detail}>Recipe cards and item icons</Text></View>
+          <View style={s.stepper}>
+            <TouchableOpacity style={s.step} accessibilityRole="button" accessibilityLabel="Decrease recipe and item size" disabled={contentZoom <= MINIMUM_CONTENT_ZOOM} onPress={() => stepContent(-1)}>
+              <Text style={[s.stepText, contentZoom <= MINIMUM_CONTENT_ZOOM && s.disabled]}>−</Text>
+            </TouchableOpacity>
+            <Text style={s.value} accessibilityLabel={`Recipe and item size ${Math.round(contentZoom * 100)} percent`}>{Math.round(contentZoom * 100)}%</Text>
+            <TouchableOpacity style={s.step} accessibilityRole="button" accessibilityLabel="Increase recipe and item size" disabled={contentZoom >= MAXIMUM_CONTENT_ZOOM} onPress={() => stepContent(1)}>
+              <Text style={[s.stepText, contentZoom >= MAXIMUM_CONTENT_ZOOM && s.disabled]}>+</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
       <View style={s.preview} onLayout={event => setWidth(event.nativeEvent.layout.width)}>
         <Text style={s.previewTitle}>Live preview</Text>
@@ -100,7 +117,6 @@ const s = StyleSheet.create({
   stepText: {color: theme.accent, fontSize: 22, fontWeight: '700'},
   value: {color: theme.text, minWidth: 44, textAlign: 'center', fontSize: 13, fontWeight: '700'},
   disabled: {opacity: 0.3},
-  slider: {minHeight: 44, flexWrap: 'wrap', justifyContent: 'space-between'},
   preview: {borderWidth: 1, borderColor: theme.border, borderRadius: 14, padding: 12, gap: 10, backgroundColor: theme.panel},
   previewTitle: {color: theme.text, fontWeight: '700', fontSize: 14},
   itemGrid: {flexDirection: 'row', flexWrap: 'wrap'},

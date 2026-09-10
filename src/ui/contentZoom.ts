@@ -42,6 +42,22 @@ export function normalizeContentZoom(value: number): number {
   return normalized;
 }
 
+/**
+ * Stepping for +/- buttons, which is coarser than the slider's own step: the settings screen
+ * offers these as buttons, and the 0.05 the slider moves in would take forty-five presses to
+ * cross the range. A multiple of that step, so every stop stays on the same grid the slider and
+ * normalizeContentZoom use.
+ */
+export const CONTENT_ZOOM_BUTTON_STEP = 0.25;
+
+export function stepContentZoom(value: number, direction: -1 | 1): number {
+  const normalized = normalizeContentZoom(value);
+  const stepped = Number(
+    (normalized + direction * CONTENT_ZOOM_BUTTON_STEP).toFixed(ZOOM_PRECISION),
+  );
+  return Math.min(MAXIMUM_CONTENT_ZOOM, Math.max(MINIMUM_CONTENT_ZOOM, stepped));
+}
+
 export function loadContentZoom(legacyInterfaceZoom = DEFAULT_CONTENT_ZOOM): number {
   try {
     const stored = globalThis.localStorage?.getItem(CONTENT_ZOOM_STORAGE_KEY);
