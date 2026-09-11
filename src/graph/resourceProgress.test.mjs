@@ -236,3 +236,17 @@ test('the resources tab is mounted exactly once', () => {
   const mounts = source.match(/<ResourcesScreen\b/gu) ?? [];
   assert.equal(mounts.length, 1, `ResourcesScreen is mounted ${mounts.length} times`);
 });
+
+test('exporting the list is an action on the list, not on the graph settings', () => {
+  const resources = readFileSync(
+    new URL('../components/ResourcesScreen.tsx', import.meta.url),
+    'utf8',
+  );
+  const graph = readFileSync(new URL('./GraphScreen.tsx', import.meta.url), 'utf8');
+  assert.match(resources, /onPress=\{snapshot\.onExportCsv\}/u);
+  // Gone from both graph surfaces: the list it exports has a tab of its own now.
+  assert.doesNotMatch(graph, /label="Export resources CSV"/u);
+  assert.doesNotMatch(graph, /key: 'export-csv'/u);
+  // HQ PNG renders the canvas, so that one stays with the graph.
+  assert.match(graph, /key: 'export-png'/u);
+});

@@ -154,3 +154,73 @@ test('community auto expand stays enabled after a completed run until toggled of
   assert.doesNotMatch(toggleSource, /finally \{[\s\S]*setCommunityAutoExpand\(false\);/u);
   assert.match(graphScreenSource, /communityAutoExpand\s*\? 'Auto expand on'/u);
 });
+
+test('asks about a node with no remembered recipe rather than walking past it', async () => {
+  const root = {
+    id: 'root', key: 'root', ancestors: [],
+    source: {
+      id: 'root.s', kind: 'recipe', inputs: [
+        {id: 'a', key: 'favourited', ancestors: ['root']},
+        {id: 'b', key: 'unfavourited', ancestors: ['root']},
+      ],
+    },
+  };
+  const asked = [];
+  await autoExpandPreferredNodes(
+    root,
+    node => (node.key === 'favourited' ? {pick: node.key} : null),
+    async node => {
+      node.source = {id: `${node.id}.s`, kind: 'recipe', inputs: []};
+    },
+    {
+      resolveMissingSource: async node => {
+        asked.push(node.key);
+        // Whatever answers the prompt attaches the source; the walk reads it back off the node.
+        // Only the item actually asked about gains a child, or the fixture grows forever.
+        node.source = {
+          id: `${node.id}.s`,
+          kind: 'recipe',
+          inputs:
+            node.key === 'unfavourited'
+              ? [{id: 'b1', key: 'chosen-child', ancestors: ['root', node.key]}]
+              : [],
+        };
+        return true;
+      },
+    },
+  );
+  // The favourited node is never asked about, and the walk continues into what the answer
+  // revealed -- asking about that too, since it has no remembered recipe either.
+  assert.deepEqual(asked, ['unfavourited', 'chosen-child']);
+  assert.equal(root.source.inputs[1].source.inputs[0].key, 'chosen-child');
+});
+
+test('a dismissed prompt stops the run instead of asking for every node left', async () => {
+  const root = {
+    id: 'root', key: 'root', ancestors: [],
+    source: {
+      id: 'root.s', kind: 'recipe', inputs: [
+        {id: 'a', key: 'one', ancestors: ['root']},
+        {id: 'b', key: 'two', ancestors: ['root']},
+        {id: 'c', key: 'three', ancestors: ['root']},
+      ],
+    },
+  };
+  const asked = [];
+  await autoExpandPreferredNodes(root, () => null, async () => {}, {
+    resolveMissingSource: async node => {
+      asked.push(node.key);
+      return false;
+    },
+  });
+  assert.equal(asked.length, 1, `asked ${asked.length} times after a dismissal`);
+});
+
+test('without a prompt handler it still skips what nobody favourited', async () => {
+  const root = {
+    id: 'root', key: 'root', ancestors: [],
+    source: {id: 'root.s', kind: 'recipe', inputs: [{id: 'a', key: 'x', ancestors: ['root']}]},
+  };
+  const expanded = await autoExpandPreferredNodes(root, () => null, async () => {});
+  assert.deepEqual(expanded, []);
+});

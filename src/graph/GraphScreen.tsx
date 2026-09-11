@@ -1970,6 +1970,37 @@ export function GraphScreen({
     [graphDirection, openPicker],
   );
 
+  /**
+   * Auto expand pauses on a node with no remembered recipe and asks. The picker reports its
+   * outcome through this, so the run continues on a choice and stops when the prompt is dismissed
+   * -- the alternative being a prompt for every remaining node with no way out of them.
+   */
+  const sourcePromptRef = useRef<((chosen: boolean) => void) | null>(null);
+  const pickerSelectionMadeRef = useRef(false);
+  const settleSourcePrompt = useCallback((chosen: boolean) => {
+    const resolve = sourcePromptRef.current;
+    sourcePromptRef.current = null;
+    resolve?.(chosen);
+  }, []);
+  useEffect(() => {
+    if (picker || !sourcePromptRef.current) return;
+    const chosen = pickerSelectionMadeRef.current;
+    pickerSelectionMadeRef.current = false;
+    settleSourcePrompt(chosen);
+  }, [picker, settleSourcePrompt]);
+  const requestSourceChoice = useCallback(
+    (node: ItemTreeNode) =>
+      new Promise<boolean>(resolve => {
+        // A prompt already waiting means the previous one never settled; treat it as dismissed
+        // rather than leaving two runs waiting on the same picker.
+        settleSourcePrompt(false);
+        pickerSelectionMadeRef.current = false;
+        sourcePromptRef.current = resolve;
+        openPickerWithErrorHandling(node);
+      }),
+    [openPickerWithErrorHandling, settleSourcePrompt],
+  );
+
   const cancelPickerLookup = useCallback(() => {
     pickerRequestIdRef.current += 1;
     setPickerLookup(null);
@@ -3501,6 +3532,18 @@ export function GraphScreen({
           },
           {
             batchSize: AUTO_EXPAND_BATCH_SIZE,
+            // Nothing is favourited for this item, by the user or anyone else, so the run asks
+            // rather than walking past it and reporting a tree it quietly declined to fill in.
+            resolveMissingSource: async node => {
+              if (
+                communityFavoriteRequestRef.current !== requestId ||
+                !communityAutoExpandRef.current
+              ) {
+                return false;
+              }
+              bump();
+              return requestSourceChoice(node);
+            },
             shouldContinue: () =>
               communityFavoriteRequestRef.current === requestId &&
               communityAutoExpandRef.current,
@@ -3561,6 +3604,7 @@ export function GraphScreen({
     data.metaCategories,
     graphDirection,
     preferredSourceFor,
+    requestSourceChoice,
   ]);
 
   const updateUseByproducts = useCallback((value: boolean) => {
@@ -3592,12 +3636,14 @@ export function GraphScreen({
       useByproducts,
       onUseByproductsChange: updateUseByproducts,
       onResourceTap,
+      onExportCsv: exportTotals,
       lookupPending: pickerLookup !== null,
     });
     // Left published on unmount rather than cleared: clearing races the next tree's publish and
     // would blank the resources tab while switching between open trees.
     return undefined;
   }, [
+    exportTotals,
     graphRootKey,
     isActive,
     onResourceTap,
@@ -3841,14 +3887,6 @@ export function GraphScreen({
         kind: 'action',
         metricsId: 'graph.totals.export-png',
         onPress: exportingTree ? () => {} : closeAfter(() => void exportTreeImage()),
-      },
-      {
-        key: 'export-csv',
-        label: 'Export resources CSV',
-        description: 'Every raw material this tree needs, as a spreadsheet',
-        kind: 'action',
-        metricsId: 'graph.totals.export-csv',
-        onPress: closeAfter(exportTotals),
       },
       {
         key: 'share',
@@ -4434,15 +4472,6 @@ export function GraphScreen({
             }}
           />
           <CtrlBtn
-            label="Export resources CSV"
-            accessibilityLabel="Export every raw material this tree needs as a spreadsheet"
-            metricsId="graph.totals.export-csv"
-            onPress={() => {
-              setShowMoreControls(false);
-              exportTotals();
-            }}
-          />
-          <CtrlBtn
             label="Share"
             metricsId="graph.control.share"
             onPress={() => {
@@ -4718,6 +4747,9 @@ export function GraphScreen({
             openItem(machineKey);
           }}
           onSelect={i => {
+            // Recorded rather than resolved here: the effect below settles the prompt once the
+            // picker has actually closed, so the waiting run reads a node that has its source.
+            pickerSelectionMadeRef.current = true;
             const p = picker;
             const entries = visiblePickerEntries(p, hiddenRecipeStages);
             const selectedEntry = entries[i];

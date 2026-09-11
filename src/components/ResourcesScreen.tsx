@@ -114,6 +114,7 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
 
   return (
     <View style={styles.screen}>
+      <View style={styles.listActions}>
       <TouchableOpacity
         {...signalTarget('resources.use-byproducts')}
         accessibilityRole="switch"
@@ -129,6 +130,15 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
           {snapshot.useByproducts ? '✓ ' : ''}Use byproducts
         </Text>
       </TouchableOpacity>
+        <TouchableOpacity
+          {...signalTarget('resources.export-csv')}
+          accessibilityRole="button"
+          accessibilityLabel="Export this list as a spreadsheet"
+          style={styles.exportCsv}
+          onPress={snapshot.onExportCsv}>
+          <Text style={styles.exportCsvText}>Export CSV</Text>
+        </TouchableOpacity>
+      </View>
       <View style={styles.header}>
         <ItemIcon item={rootItem} itemKey={snapshot.rootKey} size={32} />
         <View style={styles.headerCopy}>
@@ -237,18 +247,30 @@ const styles = StyleSheet.create({
   // rather than unmounted, so a transparent screen scrolls over whatever is still painted behind
   // it and smears.
   screen: {flex: 1, paddingHorizontal: 12, paddingTop: 12, backgroundColor: theme.bg},
+  /** Actions on the whole list, above the tree they belong to. */
+  listActions: {flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10},
   /** Top left, and the same preference the tree toggles: this list is what it changes most. */
   byproducts: {
     alignSelf: 'flex-start',
     minHeight: Platform.OS === 'web' ? 30 : 40,
     justifyContent: 'center',
-    marginBottom: 10,
     paddingHorizontal: 10,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: theme.border,
     backgroundColor: theme.panelAlt,
   },
+  exportCsv: {
+    marginLeft: 'auto',
+    minHeight: Platform.OS === 'web' ? 30 : 40,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: theme.panelAlt,
+  },
+  exportCsvText: {color: theme.accent, fontSize: 12, fontWeight: '700'},
   byproductsOn: {borderColor: theme.accent, backgroundColor: '#173724'},
   byproductsText: {color: theme.textDim, fontSize: 12, fontWeight: '700'},
   byproductsTextOn: {color: theme.accent},

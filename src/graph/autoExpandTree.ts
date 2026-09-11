@@ -11,6 +11,12 @@ export interface AutoExpandOptions {
   /** Number of attached sources between graph renders/browser yields. */
   batchSize?: number;
   onBatch?: (progress: AutoExpandProgress) => void | Promise<void>;
+  /**
+   * Called for a node with no remembered recipe. Resolving false stops the run, which is what a
+   * dismissed prompt means: the alternative is asking again for every remaining node. Whatever
+   * attaches a source does so before resolving, and this walk reads it back off the node.
+   */
+  resolveMissingSource?: (node: ItemTreeNode) => Promise<boolean>;
 }
 
 /**
@@ -54,7 +60,20 @@ export async function autoExpandPreferredNodes<TChoice>(
     if (node.loading || node.cyclic || node.deferredRecipeExpansion) continue;
 
     const preferred = preferredSourceFor(node);
-    if (!preferred) continue;
+    if (!preferred) {
+      if (!options.resolveMissingSource) continue;
+      if (!(await options.resolveMissingSource(node))) break;
+      const chosenSource = node.source as ItemTreeNode['source'];
+      if (!chosenSource) continue;
+      appliedSourceCount += 1;
+      pendingBatchSize += 1;
+      if (chosenSource.kind === 'recipe') expandedRecipes.push(node);
+      for (let index = chosenSource.inputs.length - 1; index >= 0; index -= 1) {
+        stack.push(chosenSource.inputs[index]);
+      }
+      if (pendingBatchSize >= batchSize) await flushBatch();
+      continue;
+    }
     await applyPreferredSource(node, preferred);
     appliedSourceCount += 1;
     pendingBatchSize += 1;
