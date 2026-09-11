@@ -25,15 +25,14 @@ test('draws far-zoom nodes as a square chip on the node centre', () => {
   assert.equal(geometry.top + geometry.height / 2, 65);
 });
 
-test('gives the icon most of the chip rather than a fraction of it', () => {
+test('fills the chip with the icon, since it is all that carries meaning at this zoom', () => {
   const geometry = lowDetailRasterGeometry(
     {x: 0, y: 0, w: 172, h: 58},
     {x: 0, y: 0, scale: 0.42},
   );
-  assert.ok(
-    geometry.iconSize / geometry.width > 0.7,
-    `icon filled only ${geometry.iconSize / geometry.width} of its chip`,
-  );
+  assert.equal(geometry.iconSize, geometry.width);
+  assert.equal(geometry.iconLeft, geometry.left);
+  assert.equal(geometry.iconTop, geometry.top);
 });
 
 test('keeps far-zoom geometry visible below one screen pixel', () => {

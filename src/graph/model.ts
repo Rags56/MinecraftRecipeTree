@@ -97,6 +97,12 @@ export interface ItemTreeNode {
   source?: SourceTreeNode;
   /** Recipe expansion held by another occurrence while expand-once mode is active. */
   deferredRecipeExpansion?: DeferredRecipeExpansion;
+  /**
+   * The subtree this node had before it was collapsed, so reopening it restores what was there
+   * rather than rebuilding a different tree from remembered recipes. Held in memory only: the
+   * saved session records what is expanded, and a folded branch is not.
+   */
+  collapsedSource?: SourceTreeNode;
 }
 
 export function makeRoot(key: string): ItemTreeNode {

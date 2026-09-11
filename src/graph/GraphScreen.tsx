@@ -1161,6 +1161,7 @@ export function GraphScreen({
           };
           return child;
         });
+        node.collapsedSource = undefined;
         node.source = {
           id: sourceId,
           kind: 'recipe',
@@ -1317,6 +1318,7 @@ export function GraphScreen({
         return;
       }
       node.deferredRecipeExpansion = undefined;
+      node.collapsedSource = undefined;
       const sourceId = `${node.id}.s`;
       node.source =
         choice.t === 'mob'
@@ -2130,9 +2132,35 @@ export function GraphScreen({
           }
         }
         releaseByproductFulfillmentsFromSubtree(node);
+        // Kept so reopening restores this exact subtree. The byproduct credits released above do
+        // not come back with it; they are re-derived from whatever the tree looks like then.
+        node.collapsedSource = node.source;
         node.source = undefined;
         bump();
         return;
+      }
+      if (node.collapsedSource) {
+        const restored = node.collapsedSource;
+        const expansion = recipeExpansionFromSource(restored);
+        // Unique mode may have handed this recipe to another occurrence while it was folded, and
+        // restoring it here would leave the same recipe expanded twice.
+        const takenOver =
+          expandRecipesOnceRef.current &&
+          expansion !== null &&
+          findRecipeExpansionOwner(
+            rootRef.current,
+            node.key,
+            graphDirection,
+            expansion,
+            node,
+          ) !== null;
+        if (!takenOver) {
+          node.collapsedSource = undefined;
+          node.source = restored;
+          bump();
+          return;
+        }
+        node.collapsedSource = undefined;
       }
       const choices = choicesFor(node.key, graphDirection, node.alternatives);
       if (choices.length === 0) return;
@@ -2233,6 +2261,7 @@ export function GraphScreen({
       }
       if (node.source) releaseByproductFulfillmentsFromSubtree(node);
       node.source = undefined;
+      node.collapsedSource = undefined;
       node.deferredRecipeExpansion = undefined;
       bump();
       setNodeMenu(null);
@@ -5022,8 +5051,14 @@ function useNodeActionHandlers(
   return {press, longPress, contextMenuProps};
 }
 
-const LowDetailItemIcon = React.memo(function LowDetailItemIcon({itemKey}: {itemKey: string}) {
-  return <ItemIcon itemKey={itemKey} size={32} />;
+const LowDetailItemIcon = React.memo(function LowDetailItemIcon({
+  itemKey,
+  size,
+}: {
+  itemKey: string;
+  size: number;
+}) {
+  return <ItemIcon itemKey={itemKey} size={size} />;
 });
 
 const LowDetailNodeView = React.memo(function LowDetailNodeView({
@@ -5051,6 +5086,10 @@ const LowDetailNodeView = React.memo(function LowDetailNodeView({
     [node, onActions],
   );
   const handlers = useNodeActionHandlers(handleTap, handleActions);
+  // The layout box is 172 by 58 for an item, which at this zoom is a wide empty rectangle with a
+  // small icon adrift in it. A square chip on the same centre keeps the edges meeting where they
+  // did, and the icon fills it rather than floating inside it.
+  const chip = Math.max(16, Math.min(w, h));
   return (
     <Pressable
       {...handlers.contextMenuProps}
@@ -5063,10 +5102,15 @@ const LowDetailNodeView = React.memo(function LowDetailNodeView({
         styles.lowDetailNode,
         expanded && styles.lowDetailSourceNode,
         node.id === 'root' && styles.lowDetailRootNode,
-        {left: x, top: y, width: Math.max(16, w), height: Math.max(16, h)},
+        {
+          left: x + (w - chip) / 2,
+          top: y + (h - chip) / 2,
+          width: chip,
+          height: chip,
+        },
       ]}
     >
-      <LowDetailItemIcon itemKey={node.key} />
+      <LowDetailItemIcon itemKey={node.key} size={chip} />
     </Pressable>
   );
 });

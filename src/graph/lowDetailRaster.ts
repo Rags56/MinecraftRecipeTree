@@ -6,8 +6,10 @@ import type {GraphTransform} from './panGesture.ts';
  * the layout allocated. An item box is 172 by 58, so drawing it faithfully at this zoom gives a
  * wide empty rectangle with a small icon adrift in the middle of it; the chip is the size the
  * icon actually needs, and the centre is unchanged, so edges still meet it where they always did.
+ * The icon fills that chip completely: at this zoom it is the only thing carrying meaning, and
+ * padding around it only makes it smaller for no gain.
  */
-export const LOW_DETAIL_ICON_FILL = 0.78;
+export const LOW_DETAIL_ICON_FILL = 1;
 
 export interface LowDetailRasterGeometry {
   left: number;
