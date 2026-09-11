@@ -1,11 +1,20 @@
 import type {DatasetDescriptor} from '../data/datasetCatalog';
-import type {TreeTotal} from './treeTotals';
+import {treeTotalIdentity, type TreeTotal} from './treeTotals.ts';
 
 /**
  * Which resources the user has already gathered, so the list doubles as a checklist for actually
  * building the thing. Scoped to the pack and the tree's root item: the same item is a different
  * job in a different pack, and ticking iron off for one build should not tick it off for another.
  */
+/**
+ * Totals are grouped by logical identity, not by item key: a recipe asking for any iron ingot and
+ * one asking for that exact ingot are different requirements that happen to share a key. Ticking
+ * one must not tick the other, and two rows must not collide as the same list entry.
+ */
+export function resourceIdentity(resource: TreeTotal): string {
+  return treeTotalIdentity(resource);
+}
+
 export function resourceProgressKey(
   descriptor: Pick<DatasetDescriptor, 'slug' | 'publicationId'>,
   rootKey: string,
@@ -67,7 +76,7 @@ export function resourceCompletionPercentage(
 ): number {
   if (resources.length === 0) return 0;
   const done = resources.reduce(
-    (total, resource) => total + (completed.has(resource.key) ? 1 : 0),
+    (total, resource) => total + (completed.has(resourceIdentity(resource)) ? 1 : 0),
     0,
   );
   return Math.round((done / resources.length) * 100);
@@ -79,7 +88,7 @@ export function prunedCompletedResources(
   completed: ReadonlySet<string>,
 ): ReadonlySet<string> {
   if (completed.size === 0) return completed;
-  const live = new Set(resources.map(resource => resource.key));
+  const live = new Set(resources.map(resourceIdentity));
   const pruned = new Set<string>();
   for (const key of completed) {
     if (live.has(key)) pruned.add(key);

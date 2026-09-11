@@ -18,6 +18,7 @@ import {
   persistCompletedResources,
   prunedCompletedResources,
   resourceCompletionPercentage,
+  resourceIdentity,
   sortResourcesForChecklist,
   toggleCompletedResource,
 } from '../graph/resourceProgress';
@@ -151,7 +152,7 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
       <ScrollView contentContainerStyle={styles.list}>
         {sorted.map(total => (
           <ResourceRow
-            key={total.key}
+            key={resourceIdentity(total)}
             total={total}
             name={displayIngredientName(
               data.itemsByKey.get(total.key)?.n ?? total.key,
@@ -159,8 +160,8 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
               data.descriptor.minecraftVersion,
             )}
             iconSize={iconSize}
-            done={countable.has(total.key)}
-            pending={pendingLookupKey === total.key}
+            done={countable.has(resourceIdentity(total))}
+            pending={pendingLookupKey === resourceIdentity(total)}
             onOpen={openInTree}
             onToggle={toggle}
           />
@@ -224,7 +225,7 @@ const ResourceRow = React.memo(function ResourceRow({
         accessibilityState={{checked: done}}
         accessibilityLabel={`Mark ${name} as gathered`}
         style={[styles.tick, done && styles.tickDone]}
-        onPress={() => onToggle(total.key)}>
+        onPress={() => onToggle(resourceIdentity(total))}>
         <Text style={[styles.tickMark, done && styles.tickMarkDone]}>{done ? '✓' : ''}</Text>
       </TouchableOpacity>
     </View>

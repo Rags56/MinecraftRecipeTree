@@ -6630,7 +6630,9 @@ const styles = StyleSheet.create({
   },
   recipeLookupCancelText: {color: theme.text, fontSize: 13, fontWeight: '700'},
   controlOptions: {
-    flex: 1,
+    // Shrinks and wraps, but does not grow: growing pushed the buttons that follow it to the far
+    // side of the canvas, so the bar read as two unrelated groups at opposite edges.
+    flexShrink: 1,
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
@@ -6644,7 +6646,7 @@ const styles = StyleSheet.create({
     right: 10,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-start',
     gap: 6,
     padding: 8,
     borderRadius: 10,
@@ -6797,7 +6799,9 @@ const styles = StyleSheet.create({
   focusChip: {
     position: 'absolute',
     top: 54,
-    left: CANVAS_EDGE_INSET,
+    ...(Platform.OS === 'web'
+      ? {right: CANVAS_EDGE_INSET}
+      : {left: CANVAS_EDGE_INSET}),
     maxWidth: '70%',
     zIndex: 20,
     flexDirection: 'row',

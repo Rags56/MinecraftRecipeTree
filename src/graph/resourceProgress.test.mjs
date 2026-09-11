@@ -6,6 +6,7 @@ import {
   persistCompletedResources,
   prunedCompletedResources,
   resourceCompletionPercentage,
+  resourceIdentity,
   resourceProgressKey,
   sortResourcesForChecklist,
   toggleCompletedResource,
@@ -202,8 +203,8 @@ test('a tap that starts no lookup leaves no spinner behind', () => {
   // An item with no recipe to find starts no lookup, so a spinner keyed only on the tap would
   // have nothing to stop it: the one row guaranteed never to load would spin forever.
   assert.match(source, /const pendingLookupKey = lookupPending \? pendingKey : null;/u);
-  assert.match(source, /pending=\{pendingLookupKey === total\.key\}/u);
-  assert.doesNotMatch(source, /pending=\{pendingKey === total\.key\}/u);
+  assert.match(source, /pending=\{pendingLookupKey === resourceIdentity\(total\)\}/u);
+  assert.doesNotMatch(source, /pending=\{pendingKey === /u);
 });
 
 test('an item with nowhere to go says so instead of looking ignored', () => {
@@ -211,4 +212,18 @@ test('an item with nowhere to go says so instead of looking ignored', () => {
   const tap = source.slice(source.indexOf('const choices = choicesFor(node.key, graphDirection'));
   assert.match(tap.slice(0, 600), /has no recipe in this pack; it has to be gathered\./u);
   assert.match(tap.slice(0, 600), /Nothing in this pack uses/u);
+});
+
+test('a tag requirement and a concrete one are separate entries, not one row twice', () => {
+  // Totals group by logical identity: "any iron ingot" and that exact ingot share an item key but
+  // are different requirements. Keying rows by the item key collided them into one list entry,
+  // so ticking either ticked both and React saw two children with the same key.
+  const concrete = {key: 'item|iron_ingot', amount: 8, variants: 1};
+  const anyIngot = {key: 'item|iron_ingot', amount: 4, variants: 6, tag: 'forge:ingots/iron'};
+  assert.notEqual(resourceIdentity(concrete), resourceIdentity(anyIngot));
+
+  const resources = [concrete, anyIngot];
+  const completed = new Set([resourceIdentity(concrete)]);
+  assert.equal(resourceCompletionPercentage(resources, completed), 50);
+  assert.deepEqual([...prunedCompletedResources(resources, completed)], [resourceIdentity(concrete)]);
 });
