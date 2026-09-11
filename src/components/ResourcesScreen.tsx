@@ -14,14 +14,18 @@ import {displayIngredientName} from '../data/ingredientTags';
 import {formatIngredientQuantity} from '../data/ingredientQuantities';
 import {useGraphTotals} from '../graph/GraphTotalsContext';
 import {findTreeNodeById} from '../graph/treeFocus';
-import {resourceOutlineRows, type ResourceOutlineRow} from '../graph/resourceOutline';
+import {
+  gatherableIdentitiesUnder,
+  outlineRowIdentity,
+  resourceOutlineRows,
+  type ResourceOutlineRow,
+} from '../graph/resourceOutline';
 import {
   loadCompletedResources,
   persistCompletedResources,
   prunedCompletedResources,
   resourceCompletionPercentage,
-  resourceIdentity,
-  toggleCompletedResource,
+  withResourcesCompleted,
 } from '../graph/resourceProgress';
 import type {TreeTotal} from '../graph/treeTotals';
 import {theme} from '../theme';
@@ -78,17 +82,6 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
   const pendingLookupKey = lookupPending ? pendingKey : null;
   const percentage = resourceCompletionPercentage(resources, countable);
 
-  const toggle = useCallback(
-    (itemKey: string) => {
-      if (!rootKey) return;
-      setCompleted(current => {
-        const next = toggleCompletedResource(current, itemKey);
-        persistCompletedResources(data.descriptor, rootKey, next);
-        return next;
-      });
-    },
-    [data.descriptor, rootKey],
-  );
 
   // Deliberately does not switch tabs: choosing a recipe here updates the tree in the background
   // and this list re-reads the totals that come back from it.
@@ -110,6 +103,28 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
     [nodeById],
   );
   // A row with no recipe yet: ask the tree to choose one, which is what the picker is for.
+  /**
+   * A row's tick covers everything under it: a section is ticked when its whole branch is, and
+   * ticking one ticks the branch in a single write rather than a hundred.
+   */
+  const identitiesFor = useCallback(
+    (row: ResourceOutlineRow) => {
+      const node = nodeById(row.nodeId);
+      return node ? gatherableIdentitiesUnder(node) : [outlineRowIdentity(row)];
+    },
+    [nodeById],
+  );
+  const rowState = useCallback(
+    (row: ResourceOutlineRow) => {
+      const identities = identitiesFor(row);
+      const ticked = identities.filter(identity => completed.has(identity)).length;
+      return {
+        done: identities.length > 0 && ticked === identities.length,
+        partial: ticked > 0 && ticked < identities.length,
+      };
+    },
+    [completed, identitiesFor],
+  );
   const openRow = useCallback(
     (nodeId: string) => {
       const node = nodeById(nodeId);
@@ -119,7 +134,18 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
     },
     [nodeById],
   );
-  const tickRow = useCallback((itemKey: string) => toggle(itemKey), [toggle]);
+  const tickRow = useCallback(
+    (row: ResourceOutlineRow, done: boolean) => {
+      if (!rootKey) return;
+      const identities = identitiesFor(row);
+      setCompleted(current => {
+        const next = withResourcesCompleted(current, identities, !done);
+        persistCompletedResources(data.descriptor, rootKey, next);
+        return next;
+      });
+    },
+    [data.descriptor, identitiesFor, rootKey],
+  );
 
   if (!snapshot || resources.length === 0) {
     return (
@@ -215,7 +241,8 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
                 data.descriptor.minecraftVersion,
               )}
               iconSize={iconSize}
-              done={!row.expanded && countable.has(resourceIdentity(row))}
+              done={rowState(row).done}
+              partial={rowState(row).partial}
               pending={pendingLookupKey === row.nodeId}
               onToggle={toggleRow}
               onOpen={openRow}
@@ -242,6 +269,7 @@ const OutlineRow = React.memo(function OutlineRow({
   name,
   iconSize,
   done,
+  partial,
   pending,
   onToggle,
   onOpen,
@@ -251,10 +279,12 @@ const OutlineRow = React.memo(function OutlineRow({
   name: string;
   iconSize: number;
   done: boolean;
+  /** Part of this branch is gathered: the tick shows a dash rather than a mark or nothing. */
+  partial: boolean;
   pending: boolean;
   onToggle: (nodeId: string) => void;
   onOpen: (nodeId: string) => void;
-  onTick: (itemKey: string) => void;
+  onTick: (row: ResourceOutlineRow, done: boolean) => void;
 }) {
   const data = useData();
   const item = data.itemsByKey.get(row.key);
@@ -308,20 +338,26 @@ const OutlineRow = React.memo(function OutlineRow({
           </Text>
         )}
       </TouchableOpacity>
-      {section ? (
-        // A section is a step on the way, not something to gather, so it has nothing to tick.
-        <View style={styles.tickSpacer} />
-      ) : (
-        <TouchableOpacity
-          {...signalTarget('resources.toggle-gathered')}
-          accessibilityRole="checkbox"
-          accessibilityState={{checked: done}}
-          accessibilityLabel={`Mark ${name} as gathered`}
-          style={[styles.tick, done && styles.tickDone]}
-          onPress={() => onTick(resourceIdentity(row))}>
-          <Text style={[styles.tickMark, done && styles.tickMarkDone]}>{done ? '✓' : ''}</Text>
-        </TouchableOpacity>
-      )}
+      <TouchableOpacity
+        {...signalTarget(section ? 'resources.toggle-branch' : 'resources.toggle-gathered')}
+        accessibilityRole="checkbox"
+        accessibilityState={{checked: partial && !done ? 'mixed' : done}}
+        accessibilityLabel={
+          section
+            ? `Mark everything under ${name} as gathered`
+            : `Mark ${name} as gathered`
+        }
+        style={[styles.tick, (done || partial) && styles.tickDone]}
+        onPress={() => onTick(row, done)}>
+        <Text
+          style={[
+            styles.tickMark,
+            (done || partial) && styles.tickMarkDone,
+            partial && styles.tickMarkPartial,
+          ]}>
+          {done ? '✓' : partial ? '–' : ''}
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 });
@@ -396,7 +432,6 @@ const styles = StyleSheet.create({
   disclosure: {width: 14, color: theme.textDim, fontSize: 13, fontWeight: '700'},
   disclosureOpen: {color: theme.accent},
   disclosureSpacer: {width: 14},
-  tickSpacer: {width: Platform.OS === 'web' ? 40 : 52},
   rowMain: {
     flex: 1,
     minWidth: 0,
@@ -435,6 +470,8 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   tickMarkDone: {borderColor: theme.accent, backgroundColor: '#173724'},
+  /** Part gathered: a dash, so "some of this branch" cannot be mistaken for "all of it". */
+  tickMarkPartial: {color: theme.textDim, backgroundColor: 'transparent'},
   empty: {
     flex: 1,
     alignItems: 'center',

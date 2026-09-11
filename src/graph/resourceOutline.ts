@@ -1,4 +1,5 @@
 import type {ItemTreeNode} from './model';
+import {treeTotalIdentity} from './treeTotals.ts';
 
 /**
  * The resources list as the shape of the tree rather than one flat total. An item whose recipe is
@@ -82,4 +83,41 @@ export function outlineResourceRows(
   rows: readonly ResourceOutlineRow[],
 ): ResourceOutlineRow[] {
   return rows.filter(row => !row.expanded);
+}
+
+/** The same logical identity the checklist and the totals use, from an outline row. */
+export function outlineRowIdentity(row: ResourceOutlineRow): string {
+  return treeTotalIdentity({key: row.key, tag: row.tag, variants: row.variants});
+}
+
+/**
+ * Every gatherable item beneath a node: the ends of its branch, which are the things a person
+ * actually collects. It follows a folded subtree as well as an open one, so ticking a section that
+ * is currently put away still ticks what it holds rather than silently nothing.
+ */
+export function gatherableIdentitiesUnder(node: ItemTreeNode): string[] {
+  const identities = new Set<string>();
+  const visit = (current: ItemTreeNode) => {
+    const source = current.source ?? current.collapsedSource;
+    if (!source) {
+      identities.add(
+        treeTotalIdentity({
+          key: current.key,
+          tag: current.tag,
+          variants: current.variantCount ?? 1,
+        }),
+      );
+      return;
+    }
+    for (const child of source.inputs) visit(child);
+  };
+  const source = node.source ?? node.collapsedSource;
+  // The node itself is a resource when it has no recipe; otherwise only its ends count.
+  if (!source) {
+    return [
+      treeTotalIdentity({key: node.key, tag: node.tag, variants: node.variantCount ?? 1}),
+    ];
+  }
+  for (const child of source.inputs) visit(child);
+  return [...identities];
 }

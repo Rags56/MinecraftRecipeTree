@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {
+  gatherableIdentitiesUnder,
   isOutlineBranch,
   outlineResourceRows,
   resourceOutlineRows,
@@ -129,4 +130,31 @@ test('a focused branch narrows the list the graph is already narrowed to', () =>
   const graph = readFileSync(new URL('./GraphScreen.tsx', import.meta.url), 'utf8');
   // The same set the layouts filter on, so the list cannot show a branch the canvas is hiding.
   assert.match(graph, /visibleNodeIds: focusVisibleNodeIds/u);
+});
+
+test('a section covers every gatherable thing beneath it', () => {
+  const {root, casing} = tree();
+  // The ends of the branch, not the steps: casing itself is made, plate and rod are collected.
+  assert.deepEqual(gatherableIdentitiesUnder(casing).sort(), ['plate', 'rod']);
+  assert.deepEqual(gatherableIdentitiesUnder(root).sort(), ['core', 'plate', 'rod']);
+});
+
+test('ticking a folded section still covers what it holds', () => {
+  const {casing} = tree();
+  casing.collapsedSource = casing.source;
+  casing.source = undefined;
+  // Its contents are out of the list but not out of the build, so they still tick.
+  assert.deepEqual(gatherableIdentitiesUnder(casing).sort(), ['plate', 'rod']);
+});
+
+test('a resource covers itself', () => {
+  assert.deepEqual(gatherableIdentitiesUnder(node('c', 'core')), ['core']);
+});
+
+test('a tag requirement keeps its own identity through a cascade', () => {
+  const anyIngot = node('a', 'iron_ingot', {tag: 'forge:ingots/iron', variantCount: 6});
+  const exact = node('b', 'iron_ingot');
+  const parent = node('p', 'p', {source: recipe('p', [anyIngot, exact])});
+  // Both are beneath the same section, and ticking it must not merge two different requirements.
+  assert.deepEqual(gatherableIdentitiesUnder(parent).sort(), ['#forge:ingots/iron', 'iron_ingot']);
 });

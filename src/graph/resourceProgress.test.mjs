@@ -8,6 +8,7 @@ import {
   resourceCompletionPercentage,
   resourceIdentity,
   resourceProgressKey,
+  withResourcesCompleted,
   sortResourcesForChecklist,
   toggleCompletedResource,
 } from './resourceProgress.ts';
@@ -271,4 +272,26 @@ test('the checklist states how many of the root it is for', () => {
   );
   const publish = graph.slice(graph.indexOf('publishGraphTotals({'));
   assert.match(publish.slice(0, publish.indexOf(']);')), /^\s+version,$/mu);
+});
+
+test('ticks a whole branch in one write rather than one key at a time', () => {
+  const completed = new Set(['iron']);
+  const branch = ['plate', 'rod', 'iron'];
+  const all = withResourcesCompleted(completed, branch, true);
+  assert.deepEqual([...all].sort(), ['iron', 'plate', 'rod']);
+  // Unticking the section clears the same set, and neither call mutates what it was given.
+  assert.deepEqual([...withResourcesCompleted(all, branch, false)], []);
+  assert.deepEqual([...completed], ['iron']);
+});
+
+test('a section is ticked only when its whole branch is', () => {
+  const screen = readFileSync(
+    new URL('../components/ResourcesScreen.tsx', import.meta.url),
+    'utf8',
+  );
+  // Derived, not stored: unticking one child has to unsettle the section above it, and a stored
+  // section tick would quietly disagree with the branch underneath.
+  assert.match(screen, /done: identities\.length > 0 && ticked === identities\.length/u);
+  assert.match(screen, /partial: ticked > 0 && ticked < identities\.length/u);
+  assert.doesNotMatch(screen, /tickSpacer/u);
 });

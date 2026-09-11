@@ -114,3 +114,21 @@ export function sortResourcesForChecklist(
     return left.key.localeCompare(right.key);
   });
 }
+
+/**
+ * Ticking a section ticks everything under it in one go, so the checklist takes a set rather than
+ * one key at a time -- a hundred separate writes would also mean a hundred renders and a hundred
+ * saves on the way to the same state.
+ */
+export function withResourcesCompleted(
+  completed: ReadonlySet<string>,
+  identities: readonly string[],
+  done: boolean,
+): Set<string> {
+  const next = new Set(completed);
+  for (const identity of identities) {
+    if (done) next.add(identity);
+    else next.delete(identity);
+  }
+  return next;
+}
