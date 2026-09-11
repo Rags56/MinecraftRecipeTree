@@ -23,8 +23,8 @@ import {
 import {
   loadCompletedResources,
   persistCompletedResources,
-  prunedCompletedResources,
-  resourceCompletionPercentage,
+  countableCompleted,
+  identityCompletionPercentage,
   withResourcesCompleted,
 } from '../graph/resourceProgress';
 import type {TreeTotal} from '../graph/treeTotals';
@@ -60,12 +60,18 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [snapshot, snapshot?.version],
   );
-  const resources = snapshot?.totals.inputs ?? [];
-  // A resource that has left the tree keeps its tick in storage -- collapsing a branch should not
-  // forget that it was gathered -- but it cannot count towards a list it is no longer on.
+  // Everything the tree needs gathering, folded branches included: folding is a view change, so
+  // progress cannot depend on what happens to be open.
+  const gatherable = useMemo(
+    () => (snapshot?.root ? gatherableIdentitiesUnder(snapshot.root) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- version tracks in-place tree edits.
+    [snapshot, snapshot?.version],
+  );
+  // A tick for something the tree no longer needs stays in storage -- collapsing a branch should
+  // not forget it was gathered -- but it cannot count towards a list it is no longer on.
   const countable = useMemo(
-    () => prunedCompletedResources(resources, completed),
-    [completed, resources],
+    () => countableCompleted(gatherable, completed),
+    [completed, gatherable],
   );
   // Icon size is pixel-grid aligned, and constant per render rather than recomputed per row.
   const iconSize = 32 * Math.max(1, Math.round(contentZoom));
@@ -80,7 +86,7 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
   // find starts none, and a spinner keyed only on the tap would then never have anything to stop
   // it: the row span forever on the one item guaranteed never to load.
   const pendingLookupKey = lookupPending ? pendingKey : null;
-  const percentage = resourceCompletionPercentage(resources, countable);
+  const percentage = identityCompletionPercentage(gatherable, countable);
 
 
   // Deliberately does not switch tabs: choosing a recipe here updates the tree in the background
@@ -147,7 +153,7 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
     [data.descriptor, identitiesFor, rootKey],
   );
 
-  if (!snapshot || resources.length === 0) {
+  if (!snapshot || gatherable.length === 0) {
     return (
       <View style={styles.empty}>
         <Text style={styles.emptyTitle}>No resources yet</Text>
@@ -210,7 +216,7 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
             </Text>
           </View>
           <Text style={styles.headerDetail}>
-            {countable.size} of {resources.length} gathered
+            {countable.size} of {gatherable.length} gathered
           </Text>
         </View>
         <Text

@@ -4,12 +4,11 @@ import test from 'node:test';
 import {
   loadCompletedResources,
   persistCompletedResources,
-  prunedCompletedResources,
-  resourceCompletionPercentage,
+  countableCompleted,
+  identityCompletionPercentage,
   resourceIdentity,
   resourceProgressKey,
   withResourcesCompleted,
-  sortResourcesForChecklist,
   toggleCompletedResource,
 } from './resourceProgress.ts';
 
@@ -81,32 +80,7 @@ test('ticking a resource toggles it without mutating what it was given', () => {
   assert.deepEqual([...toggleCompletedResource(added, 'iron')], ['gold']);
 });
 
-test('counts progress per resource, not per item', () => {
-  const resources = [resource('iron'), resource('gold'), resource('copper'), resource('tin')];
-  assert.equal(resourceCompletionPercentage(resources, new Set()), 0);
-  assert.equal(resourceCompletionPercentage(resources, new Set(['iron'])), 25);
-  assert.equal(
-    resourceCompletionPercentage(resources, new Set(['iron', 'gold', 'copper', 'tin'])),
-    100,
-  );
-  // Nothing to gather is not the same as everything gathered.
-  assert.equal(resourceCompletionPercentage([], new Set(['iron'])), 0);
-});
 
-test('ignores ticks for resources the tree no longer needs', () => {
-  const resources = [resource('iron'), resource('gold')];
-  const stale = new Set(['iron', 'obsidian']);
-  assert.deepEqual([...prunedCompletedResources(resources, stale)], ['iron']);
-  // A percentage can never exceed its own list because of a resource that left the tree.
-  assert.equal(
-    resourceCompletionPercentage(resources, prunedCompletedResources(resources, stale)),
-    50,
-  );
-  // Unchanged checklists keep their identity, so this can be used in a render path.
-  const live = new Set(['iron']);
-  assert.equal(prunedCompletedResources(resources, live), live);
-  assert.equal(prunedCompletedResources(resources, new Set()).size, 0);
-});
 
 test('the outline stays put when a row is acted on', () => {
   const source = readFileSync(
@@ -144,32 +118,7 @@ test('a recipe lookup started from the resources tab is not cancelled as a navig
   assert.doesNotMatch(source, /if \(tab !== 'graph' && pickerLookup\)/u);
 });
 
-test('sorts the checklist by how much is needed, unknown amounts last', () => {
-  const sorted = sortResourcesForChecklist([
-    {key: 'copper', amount: 12, variants: 1},
-    {key: 'unknown-a', amount: null, variants: 1},
-    {key: 'iron', amount: 640, variants: 1},
-    {key: 'gold', amount: 64, variants: 1},
-    {key: 'unknown-b', amount: null, variants: 1},
-  ]);
-  assert.deepEqual(
-    sorted.map(entry => entry.key),
-    ['iron', 'gold', 'copper', 'unknown-a', 'unknown-b'],
-  );
-});
 
-test('keeps equal amounts in a stable order and leaves its input alone', () => {
-  const resources = [
-    {key: 'zinc', amount: 8, variants: 1},
-    {key: 'apatite', amount: 8, variants: 1},
-  ];
-  assert.deepEqual(
-    sortResourcesForChecklist(resources).map(entry => entry.key),
-    ['apatite', 'zinc'],
-  );
-  assert.deepEqual(resources.map(entry => entry.key), ['zinc', 'apatite']);
-  assert.deepEqual(sortResourcesForChecklist([]), []);
-});
 
 test('a tree edit re-renders the rows it changed, not the whole checklist', () => {
   const source = readFileSync(
@@ -224,10 +173,11 @@ test('a tag requirement and a concrete one are separate entries, not one row twi
   const anyIngot = {key: 'item|iron_ingot', amount: 4, variants: 6, tag: 'forge:ingots/iron'};
   assert.notEqual(resourceIdentity(concrete), resourceIdentity(anyIngot));
 
-  const resources = [concrete, anyIngot];
+  // Two separate requirements, so ticking one leaves the other outstanding.
+  const gatherable = [resourceIdentity(concrete), resourceIdentity(anyIngot)];
   const completed = new Set([resourceIdentity(concrete)]);
-  assert.equal(resourceCompletionPercentage(resources, completed), 50);
-  assert.deepEqual([...prunedCompletedResources(resources, completed)], [resourceIdentity(concrete)]);
+  assert.equal(identityCompletionPercentage(gatherable, completed), 50);
+  assert.deepEqual([...countableCompleted(gatherable, completed)], [resourceIdentity(concrete)]);
 });
 
 test('the resources tab is mounted exactly once', () => {
@@ -294,4 +244,41 @@ test('a section is ticked only when its whole branch is', () => {
   assert.match(screen, /done: identities\.length > 0 && ticked === identities\.length/u);
   assert.match(screen, /partial: ticked > 0 && ticked < identities\.length/u);
   assert.doesNotMatch(screen, /tickSpacer/u);
+});
+
+test('counts progress per gatherable thing, and folding a branch does not change it', () => {
+  // The bug this replaces: progress was measured against the flat totals, where a folded branch
+  // appears as itself rather than as what it holds -- so a branch that was ticked and then folded
+  // had every one of its ticks discounted and the whole list read zero.
+  const gatherable = ['plate', 'rod', 'core'];
+  assert.equal(identityCompletionPercentage(gatherable, new Set()), 0);
+  assert.equal(identityCompletionPercentage(gatherable, new Set(['plate', 'rod'])), 67);
+  assert.equal(identityCompletionPercentage(gatherable, new Set(gatherable)), 100);
+  // Nothing to gather is not the same as everything gathered.
+  assert.equal(identityCompletionPercentage([], new Set(['plate'])), 0);
+});
+
+test('keeps a tick for something the tree no longer needs, but cannot count it', () => {
+  const gatherable = ['plate', 'rod'];
+  const stored = new Set(['plate', 'obsidian']);
+  assert.deepEqual([...countableCompleted(gatherable, stored)], ['plate']);
+  assert.equal(
+    identityCompletionPercentage(gatherable, countableCompleted(gatherable, stored)),
+    50,
+  );
+  // Unchanged sets keep their identity, so this can be used in a render path.
+  const live = new Set(['plate']);
+  assert.equal(countableCompleted(gatherable, live), live);
+  assert.equal(countableCompleted(gatherable, new Set()).size, 0);
+});
+
+test('the checklist measures the tree rather than the flat totals', () => {
+  const screen = readFileSync(
+    new URL('../components/ResourcesScreen.tsx', import.meta.url),
+    'utf8',
+  );
+  assert.match(screen, /gatherableIdentitiesUnder\(snapshot\.root\)/u);
+  assert.match(screen, /identityCompletionPercentage\(gatherable, countable\)/u);
+  // totals.inputs still feeds the CSV, but nothing about progress depends on it any more.
+  assert.doesNotMatch(screen, /totals\.inputs/u);
 });

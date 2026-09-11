@@ -66,54 +66,8 @@ export function toggleCompletedResource(
   return next;
 }
 
-/**
- * Counted per resource rather than per item, so one stack of cobblestone does not outweigh every
- * other line on the list. Resources that have since left the tree do not count towards it.
- */
-export function resourceCompletionPercentage(
-  resources: readonly TreeTotal[],
-  completed: ReadonlySet<string>,
-): number {
-  if (resources.length === 0) return 0;
-  const done = resources.reduce(
-    (total, resource) => total + (completed.has(resourceIdentity(resource)) ? 1 : 0),
-    0,
-  );
-  return Math.round((done / resources.length) * 100);
-}
 
-/** Drops ticks for resources the tree no longer needs, so the percentage cannot exceed its list. */
-export function prunedCompletedResources(
-  resources: readonly TreeTotal[],
-  completed: ReadonlySet<string>,
-): ReadonlySet<string> {
-  if (completed.size === 0) return completed;
-  const live = new Set(resources.map(resourceIdentity));
-  const pruned = new Set<string>();
-  for (const key of completed) {
-    if (live.has(key)) pruned.add(key);
-  }
-  return pruned.size === completed.size ? completed : pruned;
-}
 
-/**
- * Biggest jobs first, since that is the order the list is worked through. Resources whose recipe
- * exported no usable quantity sort last rather than as though they needed nothing: an unknown
- * amount is not a small one, and leaving them among the ones-and-twos buries real work.
- */
-export function sortResourcesForChecklist(
-  resources: readonly TreeTotal[],
-): readonly TreeTotal[] {
-  return [...resources].sort((left, right) => {
-    if (left.amount == null || right.amount == null) {
-      if (left.amount == null && right.amount == null) return left.key.localeCompare(right.key);
-      return left.amount == null ? 1 : -1;
-    }
-    if (left.amount !== right.amount) return right.amount - left.amount;
-    // Ties keep a stable order rather than shuffling as the tree is edited around them.
-    return left.key.localeCompare(right.key);
-  });
-}
 
 /**
  * Ticking a section ticks everything under it in one go, so the checklist takes a set rather than
@@ -131,4 +85,35 @@ export function withResourcesCompleted(
     else next.delete(identity);
   }
   return next;
+}
+
+/**
+ * Progress is measured against every gatherable thing the tree needs, which is what a tick records.
+ * The flat totals cannot serve: a folded branch appears in them as itself rather than as what it
+ * holds, so folding one would drop the ticks inside it and read as no progress at all.
+ */
+export function identityCompletionPercentage(
+  gatherable: readonly string[],
+  completed: ReadonlySet<string>,
+): number {
+  if (gatherable.length === 0) return 0;
+  const done = gatherable.reduce(
+    (total, identity) => total + (completed.has(identity) ? 1 : 0),
+    0,
+  );
+  return Math.round((done / gatherable.length) * 100);
+}
+
+/** Ticks for things the tree no longer needs are kept in storage but cannot be counted. */
+export function countableCompleted(
+  gatherable: readonly string[],
+  completed: ReadonlySet<string>,
+): ReadonlySet<string> {
+  if (completed.size === 0) return completed;
+  const live = new Set(gatherable);
+  const counted = new Set<string>();
+  for (const identity of completed) {
+    if (live.has(identity)) counted.add(identity);
+  }
+  return counted.size === completed.size ? completed : counted;
 }
