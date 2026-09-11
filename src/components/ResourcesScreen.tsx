@@ -13,13 +13,14 @@ import {useData} from '../data/DataContext';
 import {displayIngredientName} from '../data/ingredientTags';
 import {formatIngredientQuantity} from '../data/ingredientQuantities';
 import {useGraphTotals} from '../graph/GraphTotalsContext';
+import {findTreeNodeById} from '../graph/treeFocus';
+import {resourceOutlineRows, type ResourceOutlineRow} from '../graph/resourceOutline';
 import {
   loadCompletedResources,
   persistCompletedResources,
   prunedCompletedResources,
   resourceCompletionPercentage,
   resourceIdentity,
-  sortResourcesForChecklist,
   toggleCompletedResource,
 } from '../graph/resourceProgress';
 import type {TreeTotal} from '../graph/treeTotals';
@@ -43,6 +44,18 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
     setCompleted(rootKey ? loadCompletedResources(data.descriptor, rootKey) : new Set());
   }, [data.descriptor, rootKey]);
 
+  const outline = useMemo(
+    () =>
+      snapshot
+        ? resourceOutlineRows(snapshot.root, {
+            requiredByNode: snapshot.totals.requiredByNode,
+            visibleNodeIds: snapshot.visibleNodeIds,
+          })
+        : [],
+    // version: the tree is edited in place, so its identity alone does not change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [snapshot, snapshot?.version],
+  );
   const resources = snapshot?.totals.inputs ?? [];
   // A resource that has left the tree keeps its tick in storage -- collapsing a branch should not
   // forget that it was gathered -- but it cannot count towards a list it is no longer on.
@@ -50,7 +63,6 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
     () => prunedCompletedResources(resources, completed),
     [completed, resources],
   );
-  const sorted = useMemo(() => sortResourcesForChecklist(resources), [resources]);
   // Icon size is pixel-grid aligned, and constant per render rather than recomputed per row.
   const iconSize = 32 * Math.max(1, Math.round(contentZoom));
   // A lookup can take long enough to look like nothing happened, and the spinner that covers it
@@ -80,14 +92,34 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
 
   // Deliberately does not switch tabs: choosing a recipe here updates the tree in the background
   // and this list re-reads the totals that come back from it.
-  // Held in a ref so this keeps one identity: the snapshot changes with every tree edit, and a
-  // handler that changed with it would re-render every memoized row for a one-row change.
-  const resourceTapRef = useRef(snapshot?.onResourceTap);
-  resourceTapRef.current = snapshot?.onResourceTap;
-  const openInTree = useCallback((total: TreeTotal) => {
-    setPendingKey(total.key);
-    resourceTapRef.current?.(total);
+  // Held in refs so these keep one identity: the snapshot changes with every tree edit, and
+  // handlers that changed with it would re-render every memoized row for a one-row change.
+  const snapshotRef = useRef(snapshot);
+  snapshotRef.current = snapshot;
+  const nodeById = useCallback((nodeId: string) => {
+    const current = snapshotRef.current;
+    return current ? findTreeNodeById(current.root, nodeId) : null;
   }, []);
+  // One collapse, shared with the tree: folding a section here is the same act as folding that
+  // node on the canvas, so neither view can disagree with the other about what is open.
+  const toggleRow = useCallback(
+    (nodeId: string) => {
+      const node = nodeById(nodeId);
+      if (node) snapshotRef.current?.onToggleNode(node);
+    },
+    [nodeById],
+  );
+  // A row with no recipe yet: ask the tree to choose one, which is what the picker is for.
+  const openRow = useCallback(
+    (nodeId: string) => {
+      const node = nodeById(nodeId);
+      if (!node) return;
+      setPendingKey(nodeId);
+      snapshotRef.current?.onToggleNode(node);
+    },
+    [nodeById],
+  );
+  const tickRow = useCallback((itemKey: string) => toggle(itemKey), [toggle]);
 
   if (!snapshot || resources.length === 0) {
     return (
@@ -166,22 +198,31 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
       </View>
       <View style={styles.dashedRule} />
       <ScrollView contentContainerStyle={styles.list}>
-        {sorted.map(total => (
-          <ResourceRow
-            key={resourceIdentity(total)}
-            total={total}
-            name={displayIngredientName(
-              data.itemsByKey.get(total.key)?.n ?? total.key,
-              total.tag,
-              data.descriptor.minecraftVersion,
-            )}
-            iconSize={iconSize}
-            done={countable.has(resourceIdentity(total))}
-            pending={pendingLookupKey === resourceIdentity(total)}
-            onOpen={openInTree}
-            onToggle={toggle}
-          />
-        ))}
+        {outline.length === 0 ? (
+          <Text style={styles.emptyText}>
+            {snapshot.visibleNodeIds
+              ? 'This branch needs nothing yet. Expand a recipe inside it to see what it takes.'
+              : 'Nothing is expanded yet. Choose a recipe for the item above to see what it needs.'}
+          </Text>
+        ) : (
+          outline.map(row => (
+            <OutlineRow
+              key={row.nodeId}
+              row={row}
+              name={displayIngredientName(
+                data.itemsByKey.get(row.key)?.n ?? row.key,
+                row.tag,
+                data.descriptor.minecraftVersion,
+              )}
+              iconSize={iconSize}
+              done={!row.expanded && countable.has(resourceIdentity(row))}
+              pending={pendingLookupKey === row.nodeId}
+              onToggle={toggleRow}
+              onOpen={openRow}
+              onTick={tickRow}
+            />
+          ))
+        )}
       </ScrollView>
     </View>
   );
@@ -192,58 +233,95 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
  * list hundreds long re-rendered for a change that touched one of them -- which is what made the
  * icons and positions visibly settle after adding a recipe.
  */
-const ResourceRow = React.memo(function ResourceRow({
-  total,
+/**
+ * One line of the outline. A section carries a disclosure and folds the tree when tapped; a
+ * resource carries a tick, because it is the thing someone actually has to go and get.
+ */
+const OutlineRow = React.memo(function OutlineRow({
+  row,
   name,
   iconSize,
   done,
   pending,
-  onOpen,
   onToggle,
+  onOpen,
+  onTick,
 }: {
-  total: TreeTotal;
+  row: ResourceOutlineRow;
   name: string;
   iconSize: number;
   done: boolean;
   pending: boolean;
-  onOpen: (total: TreeTotal) => void;
-  onToggle: (itemKey: string) => void;
+  onToggle: (nodeId: string) => void;
+  onOpen: (nodeId: string) => void;
+  onTick: (itemKey: string) => void;
 }) {
   const data = useData();
-  const item = data.itemsByKey.get(total.key);
+  const item = data.itemsByKey.get(row.key);
+  const section = row.expanded || row.collapsed;
+  const amount = formatIngredientQuantity(row.key, row.amount);
   return (
-    <View style={[styles.row, done && styles.rowDone]}>
+    <View
+      style={[
+        styles.row,
+        section && styles.sectionRow,
+        done && styles.rowDone,
+        // Indented by depth, which is what makes this read as the tree it came from.
+        {marginLeft: row.depth * 18},
+      ]}>
       <TouchableOpacity
-        {...signalTarget('resources.open-in-tree')}
+        {...signalTarget(section ? 'resources.toggle-section' : 'resources.open-in-tree')}
         accessibilityRole="button"
         accessibilityLabel={`${name}, ${
-          total.amount == null
-            ? 'quantity unknown'
-            : formatIngredientQuantity(total.key, total.amount)
-        }. Open in the tree.`}
+          row.amount == null ? 'quantity unknown' : amount
+        }. ${
+          row.expanded
+            ? 'Collapse it here and in the tree.'
+            : row.collapsed
+              ? 'Expand it here and in the tree.'
+              : 'Choose a recipe for it.'
+        }`}
         style={styles.rowMain}
-        onPress={() => onOpen(total)}>
-        <ItemIcon item={item} itemKey={total.key} size={iconSize} />
-        <Text style={[styles.rowName, done && styles.rowNameDone]} numberOfLines={2}>
+        onPress={() => (section ? onToggle(row.nodeId) : onOpen(row.nodeId))}>
+        {section ? (
+          <Text style={[styles.disclosure, row.expanded && styles.disclosureOpen]}>
+            {row.expanded ? '▾' : '▸'}
+          </Text>
+        ) : (
+          <View style={styles.disclosureSpacer} />
+        )}
+        <ItemIcon item={item} itemKey={row.key} size={iconSize} />
+        <Text
+          style={[
+            styles.rowName,
+            section && styles.sectionName,
+            done && styles.rowNameDone,
+          ]}
+          numberOfLines={2}>
           {name}
         </Text>
         {pending ? (
           <ActivityIndicator color={theme.accent} />
         ) : (
-          <Text style={[styles.rowAmount, total.amount == null && styles.rowAmountUnknown]}>
-            {formatIngredientQuantity(total.key, total.amount)}
+          <Text style={[styles.rowAmount, row.amount == null && styles.rowAmountUnknown]}>
+            {amount}
           </Text>
         )}
       </TouchableOpacity>
-      <TouchableOpacity
-        {...signalTarget('resources.toggle-gathered')}
-        accessibilityRole="checkbox"
-        accessibilityState={{checked: done}}
-        accessibilityLabel={`Mark ${name} as gathered`}
-        style={[styles.tick, done && styles.tickDone]}
-        onPress={() => onToggle(resourceIdentity(total))}>
-        <Text style={[styles.tickMark, done && styles.tickMarkDone]}>{done ? '✓' : ''}</Text>
-      </TouchableOpacity>
+      {section ? (
+        // A section is a step on the way, not something to gather, so it has nothing to tick.
+        <View style={styles.tickSpacer} />
+      ) : (
+        <TouchableOpacity
+          {...signalTarget('resources.toggle-gathered')}
+          accessibilityRole="checkbox"
+          accessibilityState={{checked: done}}
+          accessibilityLabel={`Mark ${name} as gathered`}
+          style={[styles.tick, done && styles.tickDone]}
+          onPress={() => onTick(resourceIdentity(row))}>
+          <Text style={[styles.tickMark, done && styles.tickMarkDone]}>{done ? '✓' : ''}</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 });
@@ -313,6 +391,12 @@ const styles = StyleSheet.create({
     backgroundColor: theme.panel,
   },
   rowDone: {borderColor: theme.accent, backgroundColor: theme.panelAlt},
+  sectionRow: {borderColor: theme.borderLight, backgroundColor: theme.panelAlt},
+  sectionName: {color: theme.text, fontWeight: '700'},
+  disclosure: {width: 14, color: theme.textDim, fontSize: 13, fontWeight: '700'},
+  disclosureOpen: {color: theme.accent},
+  disclosureSpacer: {width: 14},
+  tickSpacer: {width: Platform.OS === 'web' ? 40 : 52},
   rowMain: {
     flex: 1,
     minWidth: 0,

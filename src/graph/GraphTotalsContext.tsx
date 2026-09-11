@@ -1,5 +1,6 @@
 import React, {createContext, useCallback, useContext, useMemo, useRef, useState} from 'react';
-import type {TreeTotal, TreeTotals} from './treeTotals';
+import type {ItemTreeNode} from './model';
+import type {TreeCalculation, TreeTotal} from './treeTotals';
 
 /**
  * The tree and its totals live inside the active GraphScreen, which owns the expansion state they
@@ -12,7 +13,16 @@ export interface GraphTotalsSnapshot {
   rootKey: string;
   /** How many of the root the tree is built for, which is what every amount below is relative to. */
   rootAmount: number | null;
-  totals: TreeTotals;
+  /** The calculation, not just its lists: the outline needs the per-node amounts from it. */
+  totals: TreeCalculation;
+  /** The live tree, so the list can take the shape of it rather than flattening it. */
+  root: ItemTreeNode | null;
+  /** Bumped whenever the tree is edited in place, which is how the list knows to re-read it. */
+  version: number;
+  /** An active branch focus, which narrows the list to that branch. */
+  visibleNodeIds?: ReadonlySet<string>;
+  /** Folds a node here and in the tree at once: there is one collapse, not two. */
+  onToggleNode(node: ItemTreeNode): void;
   /** One preference shared with the tree, not a second copy of it. */
   useByproducts: boolean;
   onUseByproductsChange(value: boolean): void;
@@ -45,6 +55,10 @@ export function GraphTotalsProvider({children}: {children: React.ReactNode}) {
         current.rootKey === next.rootKey &&
         current.rootAmount === next.rootAmount &&
         current.totals === next.totals &&
+        current.root === next.root &&
+        current.version === next.version &&
+        current.visibleNodeIds === next.visibleNodeIds &&
+        current.onToggleNode === next.onToggleNode &&
         current.useByproducts === next.useByproducts &&
         current.onUseByproductsChange === next.onUseByproductsChange &&
         current.onResourceTap === next.onResourceTap &&

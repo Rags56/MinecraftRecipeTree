@@ -107,17 +107,16 @@ test('ignores ticks for resources the tree no longer needs', () => {
   assert.equal(prunedCompletedResources(resources, new Set()).size, 0);
 });
 
-test('the resources list stays put when a resource is opened in the tree', () => {
+test('the outline stays put when a row is acted on', () => {
   const source = readFileSync(
     new URL('../components/ResourcesScreen.tsx', import.meta.url),
     'utf8',
   );
-  const handler = source.slice(source.indexOf('const openInTree'));
-  const body = handler.slice(0, handler.indexOf('}, []);') + 7);
-  assert.match(body, /resourceTapRef\.current\?\.\(total\)/u);
-  // Switching tabs here would take the user away from the list they are working through; the
-  // tree updates behind and the published totals bring the change back to this screen.
-  assert.doesNotMatch(body, /setTab\(/u);
+  // Folding a section and choosing a recipe both go through the tree, and neither leaves the tab:
+  // the tree updates behind and the published snapshot brings the change back here.
+  const handlers = source.slice(source.indexOf('const toggleRow'), source.indexOf('const tickRow'));
+  assert.match(handlers, /onToggleNode\(node\)/u);
+  assert.doesNotMatch(handlers, /setTab\(/u);
 });
 
 test('the resources screen paints an opaque background', () => {
@@ -176,10 +175,12 @@ test('a tree edit re-renders the rows it changed, not the whole checklist', () =
     new URL('../components/ResourcesScreen.tsx', import.meta.url),
     'utf8',
   );
-  assert.match(source, /const ResourceRow = React\.memo\(/u);
-  // The handlers a memoized row receives must not change identity with every published snapshot.
-  assert.match(source, /resourceTapRef\.current\?\.\(total\)/u);
-  assert.match(source, /const openInTree = useCallback\([\s\S]{0,200}?\}, \[\]\);/u);
+  assert.match(source, /const OutlineRow = React\.memo\(/u);
+  // The handlers a memoized row receives must not change identity with every published snapshot,
+  // so the snapshot is read through a ref rather than closed over.
+  assert.match(source, /const snapshotRef = useRef\(snapshot\);/u);
+  assert.match(source, /snapshotRef\.current = snapshot;/u);
+  assert.match(source, /const nodeById = useCallback\([\s\S]{0,240}?\}, \[\]\);/u);
   // And the lookup that a tap starts has to be visible from here, not only on the canvas.
   assert.match(source, /pending \? \(\s*<ActivityIndicator/u);
 });
@@ -203,7 +204,7 @@ test('a tap that starts no lookup leaves no spinner behind', () => {
   // An item with no recipe to find starts no lookup, so a spinner keyed only on the tap would
   // have nothing to stop it: the one row guaranteed never to load would spin forever.
   assert.match(source, /const pendingLookupKey = lookupPending \? pendingKey : null;/u);
-  assert.match(source, /pending=\{pendingLookupKey === resourceIdentity\(total\)\}/u);
+  assert.match(source, /pending=\{pendingLookupKey === row\.nodeId\}/u);
   assert.doesNotMatch(source, /pending=\{pendingKey === /u);
 });
 
