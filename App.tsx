@@ -37,7 +37,7 @@ import {isLocalPackExportUrl} from './src/data/runtimeDocumentLimits';
 import {theme} from './src/theme';
 import type {Manifest} from './src/types';
 import {Tab, UiProvider, useUi} from './src/ui/UiContext';
-import {GraphTotalsProvider} from './src/graph/GraphTotalsContext';
+import {GraphTotalsProvider, useGraphTotals} from './src/graph/GraphTotalsContext';
 import {ResourcesScreen} from './src/components/ResourcesScreen';
 import {lightImpactFeedback, selectionFeedback} from './src/ui/haptics';
 import {
@@ -492,6 +492,13 @@ function Shell({
   const activeGraphTree = openGraphTrees.find(tree => tree.id === activeGraphTreeId) ?? null;
   const graphTreeScrollRef = useRef<ScrollView>(null);
   const [graphTreePagerSuppressed, setGraphTreePagerSuppressed] = useState(false);
+  // A tree leaves its totals published when it unmounts, so that swapping between open trees does
+  // not blank the resources tab in the gap. Nothing republishes when the last one closes, though,
+  // which left the resources of a tree the user had just cleared on screen.
+  const {publish: publishGraphTotals} = useGraphTotals();
+  useEffect(() => {
+    if (openGraphTrees.length === 0) publishGraphTotals(null);
+  }, [openGraphTrees.length, publishGraphTotals]);
   const {width} = useWindowDimensions();
   const [hasHydrated, setHasHydrated] = useState(Platform.OS !== 'web');
   const compactHeader = hasHydrated && width < 720;

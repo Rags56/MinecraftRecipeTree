@@ -112,6 +112,7 @@ import {
 } from './panGesture';
 import type {GraphTransform, PanGestureOrigin} from './panGesture';
 import {recordRecipeHistory} from './recipeHistory';
+import {RecipeLoadTimeoutError, withRecipeLoadTimeout} from './recipeLoadTimeout';
 import {
   loadManualRetentionOverrides,
   manualRetentionOverrideFor,
@@ -1048,7 +1049,10 @@ export function GraphScreen({
       node.loading = true;
       if (renderUpdates) bump();
       try {
-        const [recipe] = await data.getRecipes([ref]);
+        const [recipe] = await withRecipeLoadTimeout(
+          data.getRecipes([ref]),
+          `Recipe ${ref.join(':')}`,
+        );
         const cat = data.categories[ref[0]];
         if (!recipe || !cat || recipe.err) {
           console.error('The selected graph recipe is unavailable or invalid.', {
@@ -1207,6 +1211,9 @@ export function GraphScreen({
         return true;
       } catch (error) {
         console.error('The selected graph recipe could not be expanded.', error);
+        if (error instanceof RecipeLoadTimeoutError) {
+          setExportMessage(`${error.message} Tap the item to try again.`);
+        }
         return false;
       } finally {
         node.loading = false;
@@ -1606,8 +1613,9 @@ export function GraphScreen({
       const loadedRefKeys = new Set<string>();
       let identifiedFluidTransferCount = 0;
       let excludedRedundantContainerCount = 0;
-      const initialRecipes = await data.getRecipes(
-        plan.initialChoices.map(choice => choice.ref),
+      const initialRecipes = await withRecipeLoadTimeout(
+        data.getRecipes(plan.initialChoices.map(choice => choice.ref)),
+        `Recipes for ${itemName}`,
       );
       plan.initialChoices.forEach((choice, index) => {
         const recipe = initialRecipes[index];
@@ -1912,6 +1920,11 @@ export function GraphScreen({
     ) => {
       void openPicker(node, byproductCoverage, direction).catch(error => {
         console.error('The recipe-source picker could not be opened.', error);
+        setExportMessage(
+          error instanceof RecipeLoadTimeoutError
+            ? `${error.message} Tap the item to try again.`
+            : 'Recipes for that item could not be loaded.',
+        );
       });
     },
     [graphDirection, openPicker],

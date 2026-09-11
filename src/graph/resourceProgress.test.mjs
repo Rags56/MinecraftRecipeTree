@@ -182,3 +182,14 @@ test('a tree edit re-renders the rows it changed, not the whole checklist', () =
   // And the lookup that a tap starts has to be visible from here, not only on the canvas.
   assert.match(source, /pending \? \(\s*<ActivityIndicator/u);
 });
+
+test('clearing the last tree clears the checklist with it', () => {
+  // A tree leaves its totals published when it unmounts so swapping between open trees does not
+  // blank this screen in the gap, which meant a cleared workspace kept showing the tree's
+  // resources. Nothing else republishes once the last tree is gone.
+  const source = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
+  assert.match(
+    source,
+    /if \(openGraphTrees\.length === 0\) publishGraphTotals\(null\);/u,
+  );
+});
