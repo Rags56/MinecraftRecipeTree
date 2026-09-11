@@ -28,6 +28,21 @@ export interface ResourceOutlineRow {
   byproductCredited: number;
   /** Fully supplied by byproducts: nothing here to go and get. */
   byproductCovered: boolean;
+  /**
+   * Consumed by the recipe that asked for it. A tool or a machine is not: it is needed once and
+   * survives the craft, which is a different kind of shopping from four hundred ingots.
+   */
+  consumed: boolean;
+  retentionMode?: 'reusable' | 'durability';
+  /** Crafts one of these survives, when the pack says so.  */
+  retentionUses?: number;
+}
+
+/** Which of the two lists a row belongs to. */
+export type ResourceOutlineKind = 'consumed' | 'catalyst';
+
+export function outlineRowKind(row: ResourceOutlineRow): ResourceOutlineKind {
+  return row.consumed ? 'consumed' : 'catalyst';
 }
 
 export interface ResourceOutlineOptions {
@@ -84,6 +99,9 @@ export function resourceOutlineRows(
         collapsed: child.source === undefined && child.collapsedSource !== undefined,
         byproductCredited: byproductCoverageByNode?.get(child.id)?.creditedAmount ?? 0,
         byproductCovered: isByproductCovered(byproductCoverageByNode?.get(child.id)),
+        consumed: child.nonConsumed !== true,
+        ...(child.retentionMode === undefined ? {} : {retentionMode: child.retentionMode}),
+        ...(child.retentionUses === undefined ? {} : {retentionUses: child.retentionUses}),
       });
       if (child.source) visit(child, depth + 1);
     }
@@ -115,7 +133,10 @@ export function outlineRowIdentity(row: ResourceOutlineRow): string {
 export function gatherableIdentitiesUnder(
   node: ItemTreeNode,
   byproductCoverageByNode?: ReadonlyMap<string, NodeByproductCoverage>,
+  kind?: ResourceOutlineKind,
 ): string[] {
+  const wanted = (current: ItemTreeNode) =>
+    kind === undefined || (current.nonConsumed !== true) === (kind === 'consumed');
   const identityOf = (current: ItemTreeNode) =>
     treeTotalIdentity({
       key: current.key,
@@ -128,7 +149,7 @@ export function gatherableIdentitiesUnder(
     if (!source) {
       // Covered by a byproduct is not something to go and get, so turning byproducts on moves the
       // count as well as the amounts.
-      if (!isByproductCovered(byproductCoverageByNode?.get(current.id))) {
+      if (!isByproductCovered(byproductCoverageByNode?.get(current.id)) && wanted(current)) {
         identities.add(identityOf(current));
       }
       return;
@@ -138,8 +159,31 @@ export function gatherableIdentitiesUnder(
   const source = node.source ?? node.collapsedSource;
   // The node itself is a resource when it has no recipe; otherwise only its ends count.
   if (!source) {
-    return isByproductCovered(byproductCoverageByNode?.get(node.id)) ? [] : [identityOf(node)];
+    return isByproductCovered(byproductCoverageByNode?.get(node.id)) || !wanted(node)
+      ? []
+      : [identityOf(node)];
   }
   for (const child of source.inputs) visit(child);
   return [...identities];
+}
+
+/**
+ * One list's worth of rows. A section is kept when it holds something the list wants, so a tool
+ * buried three recipes down still arrives with the path that explains where it is needed.
+ */
+export function filterOutlineRows(
+  rows: readonly ResourceOutlineRow[],
+  kind: ResourceOutlineKind,
+): ResourceOutlineRow[] {
+  const keep = rows.map(row => outlineRowKind(row) === kind);
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    if (keep[index] || !rows[index].expanded) continue;
+    for (let next = index + 1; next < rows.length && rows[next].depth > rows[index].depth; next += 1) {
+      if (keep[next]) {
+        keep[index] = true;
+        break;
+      }
+    }
+  }
+  return rows.filter((_row, index) => keep[index]);
 }

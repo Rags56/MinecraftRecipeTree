@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {
+  filterOutlineRows,
   gatherableIdentitiesUnder,
   isOutlineBranch,
+  outlineRowKind,
   outlineResourceRows,
   resourceOutlineRows,
 } from './resourceOutline.ts';
@@ -193,4 +195,64 @@ test('a partly covered row keeps its requirement and states the credit', () => {
   assert.equal(row.byproductCovered, false);
   // Still something to go and get, since a byproduct only covered part of it.
   assert.ok(gatherableIdentitiesUnder(root, partial).includes('plate'));
+});
+
+test('separates what is consumed from what is kept', () => {
+  const hammer = node('c.s.0', 'hammer', {nonConsumed: true, retentionMode: 'durability', retentionUses: 128});
+  const plate = node('c.s.1', 'plate', {amount: 8});
+  const casing = node('root.s.0', 'casing', {source: recipe('c', [hammer, plate])});
+  const root = node('root', 'stargate', {source: recipe('root', [casing])});
+
+  const rows = resourceOutlineRows(root);
+  assert.equal(rows.find(r => r.key === 'hammer').consumed, false);
+  assert.equal(rows.find(r => r.key === 'hammer').retentionMode, 'durability');
+  assert.equal(rows.find(r => r.key === 'hammer').retentionUses, 128);
+  assert.equal(rows.find(r => r.key === 'plate').consumed, true);
+  assert.equal(outlineRowKind(rows.find(r => r.key === 'hammer')), 'catalyst');
+
+  // Each list keeps the sections that lead to what it holds, so a tool three recipes down still
+  // arrives with the path that explains where it is needed.
+  assert.deepEqual(filterOutlineRows(rows, 'catalyst').map(r => r.key), ['casing', 'hammer']);
+  assert.deepEqual(filterOutlineRows(rows, 'consumed').map(r => r.key), ['casing', 'plate']);
+});
+
+test('a section with nothing for a list is left out of it', () => {
+  const plate = node('c.s.0', 'plate');
+  const casing = node('root.s.0', 'casing', {source: recipe('c', [plate])});
+  const hammer = node('root.s.1', 'hammer', {nonConsumed: true});
+  const root = node('root', 'stargate', {source: recipe('root', [casing, hammer])});
+  const rows = resourceOutlineRows(root);
+  // Casing holds nothing reusable, so the catalysts list does not carry it for nothing.
+  assert.deepEqual(filterOutlineRows(rows, 'catalyst').map(r => r.key), ['hammer']);
+});
+
+test('a tick cascades only within the list it was tapped in', () => {
+  const hammer = node('c.s.0', 'hammer', {nonConsumed: true});
+  const plate = node('c.s.1', 'plate');
+  const casing = node('root.s.0', 'casing', {source: recipe('c', [hammer, plate])});
+  const root = node('root', 'stargate', {source: recipe('root', [casing])});
+  assert.deepEqual(gatherableIdentitiesUnder(casing, undefined, 'consumed'), ['plate']);
+  assert.deepEqual(gatherableIdentitiesUnder(casing, undefined, 'catalyst'), ['hammer']);
+  // Unscoped still covers the whole branch, which is what the progress total uses.
+  assert.deepEqual(gatherableIdentitiesUnder(casing).sort(), ['hammer', 'plate']);
+  assert.deepEqual(gatherableIdentitiesUnder(root, undefined, 'catalyst'), ['hammer']);
+});
+
+test('the two lists are a filter over one tree, not a second classification', () => {
+  const screen = readFileSync(
+    new URL('../components/ResourcesScreen.tsx', import.meta.url),
+    'utf8',
+  );
+  // Both tabs, and the rows on screen are the outline put through the filter rather than a
+  // separately built list -- nothing about the tree changes when the tab does.
+  assert.match(screen, /\['consumed', 'Items'\]/u);
+  assert.match(screen, /\['catalyst', 'Catalysts & tools'\]/u);
+  assert.match(screen, /filterOutlineRows\(outline, listKind\)/u);
+  // Setting a row's kind goes through the tree's own retention override, so the tree, the totals
+  // and the other list all agree and the choice survives a restart.
+  assert.match(screen, /onToggleReusable\(node\)/u);
+  assert.match(screen, /Set as catalyst/u);
+  assert.match(screen, /Set as resource/u);
+  // And the cascade is scoped to the list, so ticking a section in one does not strike off the other.
+  assert.match(screen, /gatherableIdentitiesUnder\(node, coverage, listKind\)/u);
 });

@@ -13,8 +13,6 @@ import {
 } from './resourceProgress.ts';
 
 const descriptor = {slug: 'gt-new-horizons', publicationId: 'b0c08e74'};
-const resource = key => ({key, amount: 1, variants: 1});
-
 function withStorage(run) {
   const store = new Map();
   const previous = globalThis.localStorage;
@@ -277,9 +275,11 @@ test('the checklist measures the tree rather than the flat totals', () => {
     new URL('../components/ResourcesScreen.tsx', import.meta.url),
     'utf8',
   );
+  // Walked from the tree's root, and per list: each of Items and Catalysts counts its own work,
+  // so one machine cannot read as far as four hundred ingots.
   assert.match(
     screen,
-    /gatherableIdentitiesUnder\(\s*snapshot\.root,\s*snapshot\.totals\.byproductCoverageByNode,?\s*\)/u,
+    /gatherableIdentitiesUnder\(\s*snapshot\.root,\s*snapshot\.totals\.byproductCoverageByNode,\s*kind,?\s*\)/u,
   );
   assert.match(screen, /identityCompletionPercentage\(gatherable, countable\)/u);
   // totals.inputs still feeds the CSV, but nothing about progress depends on it any more.

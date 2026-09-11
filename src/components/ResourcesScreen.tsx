@@ -2,12 +2,14 @@ import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import {Modal} from '../ui/nativeUiScale';
 import {signalTarget} from '../analytics/signal';
 import {useData} from '../data/DataContext';
 import {displayIngredientName} from '../data/ingredientTags';
@@ -15,9 +17,11 @@ import {formatIngredientQuantity} from '../data/ingredientQuantities';
 import {useGraphTotals} from '../graph/GraphTotalsContext';
 import {findTreeNodeById} from '../graph/treeFocus';
 import {
+  filterOutlineRows,
   gatherableIdentitiesUnder,
   outlineRowIdentity,
   resourceOutlineRows,
+  type ResourceOutlineKind,
   type ResourceOutlineRow,
 } from '../graph/resourceOutline';
 import {
@@ -55,6 +59,7 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [progressKey]);
 
+  const [listKind, setListKind] = useState<ResourceOutlineKind>('consumed');
   const outline = useMemo(
     () =>
       snapshot
@@ -68,15 +73,28 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [snapshot, snapshot?.version],
   );
-  // Everything the tree needs gathering, folded branches included: folding is a view change, so
-  // progress cannot depend on what happens to be open.
-  const gatherable = useMemo(
-    () =>
+  const rows = useMemo(() => filterOutlineRows(outline, listKind), [listKind, outline]);
+  /**
+   * Progress is counted per list. A tool is needed once however much is being built, so counting
+   * one machine as far as four hundred ingots would flatter or bury the real work; and a list that
+   * ignored tools could read finished while the build still cannot start.
+   */
+  const gatherableIn = useCallback(
+    (kind: ResourceOutlineKind) =>
       snapshot?.root
-        ? gatherableIdentitiesUnder(snapshot.root, snapshot.totals.byproductCoverageByNode)
+        ? gatherableIdentitiesUnder(
+            snapshot.root,
+            snapshot.totals.byproductCoverageByNode,
+            kind,
+          )
         : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps -- version tracks in-place tree edits.
     [snapshot, snapshot?.version],
+  );
+  const catalystIdentities = useMemo(() => gatherableIn('catalyst'), [gatherableIn]);
+  const gatherable = useMemo(
+    () => gatherableIn(listKind),
+    [gatherableIn, listKind],
   );
   // A tick for something the tree no longer needs stays in storage -- collapsing a branch should
   // not forget it was gathered -- but it cannot count towards a list it is no longer on.
@@ -128,13 +146,15 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
     (row: ResourceOutlineRow) => {
       const node = nodeById(row.nodeId);
       const coverage = snapshotRef.current?.totals.byproductCoverageByNode;
+      // Scoped to the list on screen: ticking a section in Items must not strike off the tools
+      // inside it, which are a different list with its own progress.
       return node
-        ? gatherableIdentitiesUnder(node, coverage)
+        ? gatherableIdentitiesUnder(node, coverage, listKind)
         : row.byproductCovered
           ? []
           : [outlineRowIdentity(row)];
     },
-    [nodeById],
+    [listKind, nodeById],
   );
   const rowState = useCallback(
     (row: ResourceOutlineRow) => {
@@ -161,6 +181,16 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
   // guess at.
   const completedRef = useRef(completed);
   completedRef.current = completed;
+  const [menuRow, setMenuRow] = useState<ResourceOutlineRow | null>(null);
+  const openRowMenu = useCallback((row: ResourceOutlineRow) => setMenuRow(row), []);
+  const setRowKind = useCallback(() => {
+    const row = menuRow;
+    setMenuRow(null);
+    if (!row) return;
+    const node = nodeById(row.nodeId);
+    // The tree's own override, so both views agree about what is consumed and it persists.
+    if (node) snapshotRef.current?.onToggleReusable(node);
+  }, [menuRow, nodeById]);
   const tickRow = useCallback(
     (row: ResourceOutlineRow, done: boolean) => {
       if (!rootKey) return;
@@ -172,7 +202,11 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
     [data.descriptor, identitiesFor, rootKey],
   );
 
-  if (!snapshot || gatherable.length === 0) {
+  const everything = useMemo(
+    () => [...gatherableIn('consumed'), ...catalystIdentities],
+    [catalystIdentities, gatherableIn],
+  );
+  if (!snapshot || everything.length === 0) {
     return (
       <View style={styles.empty}>
         <Text style={styles.emptyTitle}>No resources yet</Text>
@@ -234,13 +268,17 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
               {formatIngredientQuantity(snapshot.rootKey, snapshot.rootAmount)}
             </Text>
           </View>
+          {/* Whose progress this is, since the bar follows the list on screen rather than both. */}
           <Text style={styles.headerDetail}>
-            {countable.size} of {gatherable.length} gathered
+            {countable.size} of {gatherable.length}{' '}
+            {listKind === 'catalyst' ? 'tools ready' : 'items gathered'}
           </Text>
         </View>
         <Text
           style={styles.percentage}
-          accessibilityLabel={`${percentage} percent of resources gathered`}>
+          accessibilityLabel={`${percentage} percent of ${
+            listKind === 'catalyst' ? 'tools and machines' : 'items'
+          } gathered`}>
           {percentage}%
         </Text>
       </View>
@@ -248,15 +286,46 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
         <View style={[styles.progressFill, {width: `${percentage}%`}]} />
       </View>
       <View style={styles.dashedRule} />
+      <View style={styles.listTabs}>
+        {(
+          [
+            ['consumed', 'Items'],
+            ['catalyst', 'Catalysts & tools'],
+          ] as const
+        ).map(([kind, label]) => {
+          const identities = kind === 'catalyst' ? catalystIdentities : gatherableIn('consumed');
+          const ticked = identities.filter(identity => completed.has(identity)).length;
+          const selected = listKind === kind;
+          return (
+            <TouchableOpacity
+              key={kind}
+              {...signalTarget(`resources.list.${kind}`)}
+              accessibilityRole="tab"
+              accessibilityState={{selected}}
+              style={[styles.listTab, selected && styles.listTabSelected]}
+              onPress={() => setListKind(kind)}>
+              <Text style={[styles.listTabText, selected && styles.listTabTextSelected]}>
+                {label}
+              </Text>
+              {/* Each list carries its own count, so neither kind of work hides the other. */}
+              <Text style={[styles.listTabCount, selected && styles.listTabCountSelected]}>
+                {identities.length === 0 ? 'none' : `${ticked}/${identities.length}`}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
       <ScrollView contentContainerStyle={styles.list}>
-        {outline.length === 0 ? (
+        {rows.length === 0 ? (
           <Text style={styles.emptyText}>
-            {snapshot.visibleNodeIds
-              ? 'This branch needs nothing yet. Expand a recipe inside it to see what it takes.'
-              : 'Nothing is expanded yet. Choose a recipe for the item above to see what it needs.'}
+            {listKind === 'catalyst'
+              ? 'No tools or machines are needed yet. Anything a recipe keeps rather than consumes will appear here.'
+              : snapshot.visibleNodeIds
+                ? 'This branch needs nothing yet. Expand a recipe inside it to see what it takes.'
+                : 'Nothing is expanded yet. Choose a recipe for the item above to see what it needs.'}
           </Text>
         ) : (
-          outline.map(row => (
+          rows.map(row => (
             <OutlineRow
               key={row.nodeId}
               row={row}
@@ -272,10 +341,50 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
               onToggle={toggleRow}
               onOpen={openRow}
               onTick={tickRow}
+              onMenu={openRowMenu}
             />
           ))
         )}
       </ScrollView>
+      <Modal
+        visible={menuRow !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuRow(null)}>
+        <Pressable style={styles.menuBackdrop} onPress={() => setMenuRow(null)}>
+          <Pressable style={styles.menuCard} onPress={() => {}}>
+            <Text style={styles.menuTitle} numberOfLines={2}>
+              {menuRow
+                ? displayIngredientName(
+                    data.itemsByKey.get(menuRow.key)?.n ?? menuRow.key,
+                    menuRow.tag,
+                    data.descriptor.minecraftVersion,
+                  )
+                : ''}
+            </Text>
+            <TouchableOpacity
+              {...signalTarget('resources.set-kind')}
+              accessibilityRole="button"
+              style={styles.menuAction}
+              onPress={setRowKind}>
+              <Text style={styles.menuActionText}>
+                {menuRow?.consumed ? 'Set as catalyst' : 'Set as resource'}
+              </Text>
+              <Text style={styles.menuActionHint}>
+                {menuRow?.consumed
+                  ? 'Kept by the recipe rather than consumed, and listed under Catalysts & tools'
+                  : 'Consumed by the recipe, and listed under Items'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityRole="button"
+              style={styles.menuCancel}
+              onPress={() => setMenuRow(null)}>
+              <Text style={styles.menuCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -299,6 +408,7 @@ const OutlineRow = React.memo(function OutlineRow({
   onToggle,
   onOpen,
   onTick,
+  onMenu,
 }: {
   row: ResourceOutlineRow;
   name: string;
@@ -310,11 +420,22 @@ const OutlineRow = React.memo(function OutlineRow({
   onToggle: (nodeId: string) => void;
   onOpen: (nodeId: string) => void;
   onTick: (row: ResourceOutlineRow, done: boolean) => void;
+  onMenu: (row: ResourceOutlineRow) => void;
 }) {
   const data = useData();
   const item = data.itemsByKey.get(row.key);
   const section = row.expanded || row.collapsed;
   const amount = formatIngredientQuantity(row.key, row.amount);
+  const longPressedRef = useRef(false);
+  const contextMenuProps =
+    Platform.OS === 'web'
+      ? ({
+          onContextMenu: (event: {preventDefault?: () => void}) => {
+            event.preventDefault?.();
+            onMenu(row);
+          },
+        } as object)
+      : {};
   return (
     <View
       style={[
@@ -337,7 +458,21 @@ const OutlineRow = React.memo(function OutlineRow({
               : 'Choose a recipe for it.'
         }`}
         style={styles.rowMain}
-        onPress={() => (section ? onToggle(row.nodeId) : onOpen(row.nodeId))}>
+        delayLongPress={450}
+        onLongPress={() => {
+          longPressedRef.current = true;
+          onMenu(row);
+        }}
+        onPress={() => {
+          // A long press has already opened the menu; the release must not also act on the row.
+          if (longPressedRef.current) {
+            longPressedRef.current = false;
+            return;
+          }
+          if (section) onToggle(row.nodeId);
+          else onOpen(row.nodeId);
+        }}
+        {...contextMenuProps}>
         {section ? (
           <Text style={[styles.disclosure, row.expanded && styles.disclosureOpen]}>
             {row.expanded ? '▾' : '▸'}
@@ -448,6 +583,55 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   progressFill: {height: 6, borderRadius: 3, backgroundColor: theme.accent},
+  menuBackdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: 'rgba(5,8,12,0.55)',
+  },
+  menuCard: {
+    width: '100%',
+    maxWidth: 380,
+    gap: 8,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.borderLight,
+    backgroundColor: theme.panel,
+  },
+  menuTitle: {color: theme.text, fontSize: 14, fontWeight: '700', marginBottom: 2},
+  menuAction: {
+    minHeight: 56,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: theme.panelAlt,
+  },
+  menuActionText: {color: theme.text, fontSize: 13, fontWeight: '700'},
+  menuActionHint: {color: theme.textDim, fontSize: 11, lineHeight: 15, marginTop: 2},
+  menuCancel: {minHeight: 44, alignItems: 'center', justifyContent: 'center'},
+  menuCancelText: {color: theme.textDim, fontSize: 12, fontWeight: '700'},
+  listTabs: {flexDirection: 'row', gap: 6, marginBottom: 10},
+  listTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: Platform.OS === 'web' ? 32 : 42,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: theme.panel,
+  },
+  listTabSelected: {borderColor: theme.accent, backgroundColor: theme.panelAlt},
+  listTabText: {color: theme.textDim, fontSize: 12, fontWeight: '700'},
+  listTabTextSelected: {color: theme.text},
+  listTabCount: {color: theme.textDim, fontSize: 11},
+  listTabCountSelected: {color: theme.accent, fontWeight: '700'},
   /** The divider between the tree being built and the materials it is waiting on. */
   dashedRule: {
     marginVertical: 12,
