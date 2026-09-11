@@ -108,8 +108,7 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
             {rootName}
           </Text>
           <Text style={styles.headerDetail}>
-            {countable.size} of {resources.length}{' '}
-            {snapshot.useByproducts ? 'still needed, gathered' : 'gathered'}
+            {countable.size} of {resources.length} gathered
           </Text>
         </View>
         <Text
@@ -136,14 +135,19 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
               <TouchableOpacity
                 {...signalTarget('resources.open-in-tree')}
                 accessibilityRole="button"
-                accessibilityLabel={`${name}, ${formatIngredientQuantity(total.key, total.amount)}. Open in the tree.`}
+                accessibilityLabel={`${name}, ${
+                  total.amount == null
+                    ? 'quantity unknown'
+                    : formatIngredientQuantity(total.key, total.amount)
+                }. Open in the tree.`}
                 style={styles.rowMain}
                 onPress={() => openInTree(total)}>
                 <ItemIcon item={item} itemKey={total.key} size={32 * Math.round(contentZoom)} />
                 <Text style={[styles.rowName, done && styles.rowNameDone]} numberOfLines={2}>
                   {name}
                 </Text>
-                <Text style={styles.rowAmount}>
+                <Text
+                  style={[styles.rowAmount, total.amount == null && styles.rowAmountUnknown]}>
                   {formatIngredientQuantity(total.key, total.amount)}
                 </Text>
               </TouchableOpacity>
@@ -230,6 +234,8 @@ const styles = StyleSheet.create({
   rowName: {flex: 1, minWidth: 0, color: theme.text, fontSize: 13, fontWeight: '600'},
   rowNameDone: {color: theme.textDim, textDecorationLine: 'line-through'},
   rowAmount: {color: theme.accent, fontSize: 13, fontWeight: '700'},
+  /** ×? means the recipe exported no usable quantity, which is not a number to read as one. */
+  rowAmountUnknown: {color: theme.textDim, fontWeight: '600'},
   tick: {
     width: Platform.OS === 'web' ? 40 : 52,
     alignSelf: 'stretch',
