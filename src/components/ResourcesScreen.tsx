@@ -347,13 +347,15 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
       </View>
       <ScrollView contentContainerStyle={styles.list}>
         {rows.length === 0 ? (
-          <Text style={styles.emptyText}>
-            {listKind === 'catalyst'
-              ? 'No tools or machines are needed yet. Anything a recipe keeps rather than consumes will appear here.'
-              : snapshot.visibleNodeIds
+          // Nothing to say on the tools list: it is empty until the user puts something there, and
+          // an explanation of that is not news worth a paragraph every time.
+          listKind === 'catalyst' ? null : (
+            <Text style={styles.emptyText}>
+              {snapshot.visibleNodeIds
                 ? 'This branch needs nothing yet. Expand a recipe inside it to see what it takes.'
                 : 'Nothing is expanded yet. Choose a recipe for the item above to see what it needs.'}
-          </Text>
+            </Text>
+          )
         ) : (
           rows.map(row => (
             <OutlineRow
