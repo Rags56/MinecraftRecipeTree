@@ -1,5 +1,13 @@
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
-import {Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {
+  ActivityIndicator,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import {signalTarget} from '../analytics/signal';
 import {useData} from '../data/DataContext';
 import {displayIngredientName} from '../data/ingredientTags';
@@ -10,6 +18,7 @@ import {
   persistCompletedResources,
   prunedCompletedResources,
   resourceCompletionPercentage,
+  sortResourcesForChecklist,
   toggleCompletedResource,
 } from '../graph/resourceProgress';
 import type {TreeTotal} from '../graph/treeTotals';
@@ -40,6 +49,16 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
     () => prunedCompletedResources(resources, completed),
     [completed, resources],
   );
+  const sorted = useMemo(() => sortResourcesForChecklist(resources), [resources]);
+  // Icon size is pixel-grid aligned, and constant per render rather than recomputed per row.
+  const iconSize = 32 * Math.max(1, Math.round(contentZoom));
+  // A lookup can take long enough to look like nothing happened, and the spinner that covers it
+  // in the tree is painted on the canvas, which this screen is not showing.
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const lookupPending = snapshot?.lookupPending ?? false;
+  useEffect(() => {
+    if (!lookupPending) setPendingKey(null);
+  }, [lookupPending]);
   const percentage = resourceCompletionPercentage(resources, countable);
 
   const toggle = useCallback(
@@ -56,10 +75,14 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
 
   // Deliberately does not switch tabs: choosing a recipe here updates the tree in the background
   // and this list re-reads the totals that come back from it.
-  const openInTree = useCallback(
-    (total: TreeTotal) => snapshot?.onResourceTap(total),
-    [snapshot],
-  );
+  // Held in a ref so this keeps one identity: the snapshot changes with every tree edit, and a
+  // handler that changed with it would re-render every memoized row for a one-row change.
+  const resourceTapRef = useRef(snapshot?.onResourceTap);
+  resourceTapRef.current = snapshot?.onResourceTap;
+  const openInTree = useCallback((total: TreeTotal) => {
+    setPendingKey(total.key);
+    resourceTapRef.current?.(total);
+  }, []);
 
   if (!snapshot || resources.length === 0) {
     return (
@@ -122,53 +145,87 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
       </View>
       <View style={styles.dashedRule} />
       <ScrollView contentContainerStyle={styles.list}>
-        {resources.map(total => {
-          const item = data.itemsByKey.get(total.key);
-          const done = countable.has(total.key);
-          const name = displayIngredientName(
-            item?.n ?? total.key,
-            total.tag,
-            data.descriptor.minecraftVersion,
-          );
-          return (
-            <View key={total.key} style={[styles.row, done && styles.rowDone]}>
-              <TouchableOpacity
-                {...signalTarget('resources.open-in-tree')}
-                accessibilityRole="button"
-                accessibilityLabel={`${name}, ${
-                  total.amount == null
-                    ? 'quantity unknown'
-                    : formatIngredientQuantity(total.key, total.amount)
-                }. Open in the tree.`}
-                style={styles.rowMain}
-                onPress={() => openInTree(total)}>
-                <ItemIcon item={item} itemKey={total.key} size={32 * Math.round(contentZoom)} />
-                <Text style={[styles.rowName, done && styles.rowNameDone]} numberOfLines={2}>
-                  {name}
-                </Text>
-                <Text
-                  style={[styles.rowAmount, total.amount == null && styles.rowAmountUnknown]}>
-                  {formatIngredientQuantity(total.key, total.amount)}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                {...signalTarget('resources.toggle-gathered')}
-                accessibilityRole="checkbox"
-                accessibilityState={{checked: done}}
-                accessibilityLabel={`Mark ${name} as gathered`}
-                style={[styles.tick, done && styles.tickDone]}
-                onPress={() => toggle(total.key)}>
-                <Text style={[styles.tickMark, done && styles.tickMarkDone]}>
-                  {done ? '✓' : ''}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          );
-        })}
+        {sorted.map(total => (
+          <ResourceRow
+            key={total.key}
+            total={total}
+            name={displayIngredientName(
+              data.itemsByKey.get(total.key)?.n ?? total.key,
+              total.tag,
+              data.descriptor.minecraftVersion,
+            )}
+            iconSize={iconSize}
+            done={countable.has(total.key)}
+            pending={pendingKey === total.key}
+            onOpen={openInTree}
+            onToggle={toggle}
+          />
+        ))}
       </ScrollView>
     </View>
   );
 }
+
+/**
+ * Memoized per resource: editing the tree republishes the totals, and without this every row in a
+ * list hundreds long re-rendered for a change that touched one of them -- which is what made the
+ * icons and positions visibly settle after adding a recipe.
+ */
+const ResourceRow = React.memo(function ResourceRow({
+  total,
+  name,
+  iconSize,
+  done,
+  pending,
+  onOpen,
+  onToggle,
+}: {
+  total: TreeTotal;
+  name: string;
+  iconSize: number;
+  done: boolean;
+  pending: boolean;
+  onOpen: (total: TreeTotal) => void;
+  onToggle: (itemKey: string) => void;
+}) {
+  const data = useData();
+  const item = data.itemsByKey.get(total.key);
+  return (
+    <View style={[styles.row, done && styles.rowDone]}>
+      <TouchableOpacity
+        {...signalTarget('resources.open-in-tree')}
+        accessibilityRole="button"
+        accessibilityLabel={`${name}, ${
+          total.amount == null
+            ? 'quantity unknown'
+            : formatIngredientQuantity(total.key, total.amount)
+        }. Open in the tree.`}
+        style={styles.rowMain}
+        onPress={() => onOpen(total)}>
+        <ItemIcon item={item} itemKey={total.key} size={iconSize} />
+        <Text style={[styles.rowName, done && styles.rowNameDone]} numberOfLines={2}>
+          {name}
+        </Text>
+        {pending ? (
+          <ActivityIndicator color={theme.accent} />
+        ) : (
+          <Text style={[styles.rowAmount, total.amount == null && styles.rowAmountUnknown]}>
+            {formatIngredientQuantity(total.key, total.amount)}
+          </Text>
+        )}
+      </TouchableOpacity>
+      <TouchableOpacity
+        {...signalTarget('resources.toggle-gathered')}
+        accessibilityRole="checkbox"
+        accessibilityState={{checked: done}}
+        accessibilityLabel={`Mark ${name} as gathered`}
+        style={[styles.tick, done && styles.tickDone]}
+        onPress={() => onToggle(total.key)}>
+        <Text style={[styles.tickMark, done && styles.tickMarkDone]}>{done ? '✓' : ''}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+});
 
 const styles = StyleSheet.create({
   // Opaque on purpose: inactive workspace panes are absolutely positioned and merely faded out

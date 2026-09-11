@@ -7,6 +7,7 @@ import {
   prunedCompletedResources,
   resourceCompletionPercentage,
   resourceProgressKey,
+  sortResourcesForChecklist,
   toggleCompletedResource,
 } from './resourceProgress.ts';
 
@@ -111,8 +112,8 @@ test('the resources list stays put when a resource is opened in the tree', () =>
     'utf8',
   );
   const handler = source.slice(source.indexOf('const openInTree'));
-  const body = handler.slice(0, handler.indexOf('  );') + 4);
-  assert.match(body, /onResourceTap\(total\)/u);
+  const body = handler.slice(0, handler.indexOf('}, []);') + 7);
+  assert.match(body, /resourceTapRef\.current\?\.\(total\)/u);
   // Switching tabs here would take the user away from the list they are working through; the
   // tree updates behind and the published totals bring the change back to this screen.
   assert.doesNotMatch(body, /setTab\(/u);
@@ -140,4 +141,44 @@ test('a recipe lookup started from the resources tab is not cancelled as a navig
     /if \(!TABS_DRIVING_THE_PICKER\.has\(tab\) && pickerLookup\) cancelPickerLookup\(\);/u,
   );
   assert.doesNotMatch(source, /if \(tab !== 'graph' && pickerLookup\)/u);
+});
+
+test('sorts the checklist by how much is needed, unknown amounts last', () => {
+  const sorted = sortResourcesForChecklist([
+    {key: 'copper', amount: 12, variants: 1},
+    {key: 'unknown-a', amount: null, variants: 1},
+    {key: 'iron', amount: 640, variants: 1},
+    {key: 'gold', amount: 64, variants: 1},
+    {key: 'unknown-b', amount: null, variants: 1},
+  ]);
+  assert.deepEqual(
+    sorted.map(entry => entry.key),
+    ['iron', 'gold', 'copper', 'unknown-a', 'unknown-b'],
+  );
+});
+
+test('keeps equal amounts in a stable order and leaves its input alone', () => {
+  const resources = [
+    {key: 'zinc', amount: 8, variants: 1},
+    {key: 'apatite', amount: 8, variants: 1},
+  ];
+  assert.deepEqual(
+    sortResourcesForChecklist(resources).map(entry => entry.key),
+    ['apatite', 'zinc'],
+  );
+  assert.deepEqual(resources.map(entry => entry.key), ['zinc', 'apatite']);
+  assert.deepEqual(sortResourcesForChecklist([]), []);
+});
+
+test('a tree edit re-renders the rows it changed, not the whole checklist', () => {
+  const source = readFileSync(
+    new URL('../components/ResourcesScreen.tsx', import.meta.url),
+    'utf8',
+  );
+  assert.match(source, /const ResourceRow = React\.memo\(/u);
+  // The handlers a memoized row receives must not change identity with every published snapshot.
+  assert.match(source, /resourceTapRef\.current\?\.\(total\)/u);
+  assert.match(source, /const openInTree = useCallback\([\s\S]{0,200}?\}, \[\]\);/u);
+  // And the lookup that a tap starts has to be visible from here, not only on the canvas.
+  assert.match(source, /pending \? \(\s*<ActivityIndicator/u);
 });

@@ -86,3 +86,22 @@ export function prunedCompletedResources(
   }
   return pruned.size === completed.size ? completed : pruned;
 }
+
+/**
+ * Biggest jobs first, since that is the order the list is worked through. Resources whose recipe
+ * exported no usable quantity sort last rather than as though they needed nothing: an unknown
+ * amount is not a small one, and leaving them among the ones-and-twos buries real work.
+ */
+export function sortResourcesForChecklist(
+  resources: readonly TreeTotal[],
+): readonly TreeTotal[] {
+  return [...resources].sort((left, right) => {
+    if (left.amount == null || right.amount == null) {
+      if (left.amount == null && right.amount == null) return left.key.localeCompare(right.key);
+      return left.amount == null ? 1 : -1;
+    }
+    if (left.amount !== right.amount) return right.amount - left.amount;
+    // Ties keep a stable order rather than shuffling as the tree is edited around them.
+    return left.key.localeCompare(right.key);
+  });
+}

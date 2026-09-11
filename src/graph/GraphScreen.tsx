@@ -3489,6 +3489,7 @@ export function GraphScreen({
       useByproducts,
       onUseByproductsChange: updateUseByproducts,
       onResourceTap,
+      lookupPending: pickerLookup !== null,
     });
     // Left published on unmount rather than cleared: clearing races the next tree's publish and
     // would blank the resources tab while switching between open trees.
@@ -3497,6 +3498,7 @@ export function GraphScreen({
     graphRootKey,
     isActive,
     onResourceTap,
+    pickerLookup,
     publishGraphTotals,
     treeTotals,
     updateUseByproducts,

@@ -16,6 +16,8 @@ export interface GraphTotalsSnapshot {
   onUseByproductsChange(value: boolean): void;
   /** Opens the resource in the tree the way tapping it in the old totals panel did. */
   onResourceTap(total: TreeTotal): void;
+  /** A recipe lookup is in flight; the surface that started it owes the user some sign of it. */
+  lookupPending: boolean;
 }
 
 interface GraphTotalsValue {
@@ -40,7 +42,8 @@ export function GraphTotalsProvider({children}: {children: React.ReactNode}) {
         current.totals === next.totals &&
         current.useByproducts === next.useByproducts &&
         current.onUseByproductsChange === next.onUseByproductsChange &&
-        current.onResourceTap === next.onResourceTap)
+        current.onResourceTap === next.onResourceTap &&
+        current.lookupPending === next.lookupPending)
     ) {
       return;
     }
