@@ -67,7 +67,7 @@ import {reportRecipeRetentionOverride} from '../data/recipeRetentionReports';
 import {useUser} from '../account/UserContext';
 import {theme} from '../theme';
 import {DropStat, Mob, Recipe, RecipeRef} from '../types';
-import {useUi} from '../ui/UiContext';
+import {useUi, type Tab} from '../ui/UiContext';
 import {
   COMPACT_LABEL_WIDTH,
   COMPACT_ITEM_SIZE,
@@ -438,6 +438,12 @@ const LEGACY_PACKED_LAYOUT_KEY = 'graphPackedLayout';
 const USE_BYPRODUCTS_KEY = 'graphUseByproducts';
 /** Distance from the canvas top to the controls bar; panels below it clear it by measurement. */
 const CONTROLS_TOP_INSET = 10;
+/**
+ * Surfaces that can ask the graph for a recipe. The resources list opens the picker without
+ * leaving itself, so an in-flight lookup started there must not be abandoned as though the user
+ * had navigated away from the graph.
+ */
+const TABS_DRIVING_THE_PICKER: ReadonlySet<Tab> = new Set<Tab>(['graph', 'resources']);
 const CANVAS_EDGE_INSET = 10;
 const FIT_CONTROL_SIZE = Platform.OS === 'web' ? 40 : 44;
 /**
@@ -703,15 +709,16 @@ export function GraphScreen({
   useEffect(() => {
     if (tab !== 'graph') setShowRootActions(false);
   }, [tab]);
+  const drivingThePicker = TABS_DRIVING_THE_PICKER.has(tab);
   useSignalSurface(
-    tab === 'graph' && picker
-      ? 'graph/source-picker'
-      : tab === 'graph' && pickerLookup
-        ? 'graph/source-lookup'
+    drivingThePicker && picker
+      ? `${tab}/source-picker`
+      : drivingThePicker && pickerLookup
+        ? `${tab}/source-lookup`
         : tab === 'graph' && nodeMenu
           ? 'graph/node-options'
         : tab,
-    tab === 'graph' && (picker || pickerLookup) ? 'modal' : 'screen',
+    drivingThePicker && (picker || pickerLookup) ? 'modal' : 'screen',
   );
   const pickerGroupLoadsRef = useRef(new Set<string>());
   const pickerRequestIdRef = useRef(0);
@@ -1916,7 +1923,7 @@ export function GraphScreen({
   }, []);
 
   useEffect(() => {
-    if (tab !== 'graph' && pickerLookup) cancelPickerLookup();
+    if (!TABS_DRIVING_THE_PICKER.has(tab) && pickerLookup) cancelPickerLookup();
   }, [cancelPickerLookup, pickerLookup, tab]);
 
   const updateRootRequestedAmount = useCallback(

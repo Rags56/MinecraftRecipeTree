@@ -128,3 +128,16 @@ test('the resources screen paints an opaque background', () => {
   assert.match(source, /screen: \{[^}]*backgroundColor: theme\.bg/u);
   assert.match(source, /empty: \{[\s\S]*?backgroundColor: theme\.bg/u);
 });
+
+test('a recipe lookup started from the resources tab is not cancelled as a navigation away', () => {
+  // openPicker sets its loading state, then awaits the recipes. Cancelling on any tab that is not
+  // the graph bumped the request id, so a lookup started from the resources list discarded its
+  // own result and the picker never opened.
+  const source = readFileSync(new URL('./GraphScreen.tsx', import.meta.url), 'utf8');
+  assert.match(source, /TABS_DRIVING_THE_PICKER: ReadonlySet<Tab> = new Set<Tab>\(\['graph', 'resources'\]\)/u);
+  assert.match(
+    source,
+    /if \(!TABS_DRIVING_THE_PICKER\.has\(tab\) && pickerLookup\) cancelPickerLookup\(\);/u,
+  );
+  assert.doesNotMatch(source, /if \(tab !== 'graph' && pickerLookup\)/u);
+});
