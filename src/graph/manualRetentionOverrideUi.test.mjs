@@ -16,16 +16,19 @@ test('context menus correct what a recipe keeps, in the user\'s own words', () =
   assert.match(menuSource, /Treat as resource/u);
   assert.doesNotMatch(menuSource, /Treat as reusable|Treat as consumed/u);
   assert.match(graphSource, /treatAsTool=\{\{/u);
-  // The correction itself is unchanged: the override is applied across the tree and remembered.
-  assert.match(graphSource, /applyManualRetentionOverrideToTree/u);
-  assert.match(graphSource, /child\.retentionMode = reusable \? 'reusable' : undefined/u);
-  // And it is one act with the list the item is shown on, so the two views cannot disagree.
-  assert.match(graphSource, /setCatalyst\(node, isTool\)/u);
+  // The node picked is the node marked, and it is one act with the list it appears on.
+  assert.match(graphSource, /setCatalyst\(node, isTool\);\s*node\.nonConsumed = isTool;/u);
+  assert.match(graphSource, /node\.retentionMode = isTool \? 'reusable' : undefined/u);
 });
 
 test('future expansions apply the saved correction before calculating consumption', () => {
+  // Corrections already stored from a pack's data still apply to branches built from now on, and a
+  // node the user marked comes back marked -- which is what makes a mark survive a collapse.
   assert.match(graphSource, /manualRetentionOverrideFor\(manualRetentionOverridesRef\.current/u);
-  assert.match(graphSource, /const nonConsumed = retentionOverride \?\? spec\.nonConsumed/u);
+  assert.match(
+    graphSource,
+    /catalystsRef\.current\.has\([\s\S]*?\) \|\| \(retentionOverride \?\? spec\.nonConsumed\)/u,
+  );
   assert.match(graphSource, /spec\.probabilityRole === 'consume' && !nonConsumed/u);
 });
 

@@ -238,7 +238,7 @@ function withTool() {
   return {root: node('root', 'stargate', {source: recipe('root', [casing])}), casing, hammer};
 }
 
-test('nothing is put on the tools list without being asked', () => {
+test('nothing is called a tool without being asked', () => {
   const rows = resourceOutlineRows(withTool().root);
   const hammer = rows.find(r => r.key === 'hammer');
   // The pack's word is reported, because it is worth knowing when deciding...
@@ -256,39 +256,42 @@ test('nothing is put on the tools list without being asked', () => {
   assert.deepEqual(filterOutlineRows(rows, 'catalyst'), []);
 });
 
-test('the user moving an item is what moves it between the lists', () => {
+test('a marked tool stays on the materials list and joins the tools list', () => {
   const rows = resourceOutlineRows(withTool().root);
-  const catalysts = new Set(['hammer']);
+  // Marked by place, not by item: the hammer picked is 'c.s.0' and nothing else follows it.
+  const catalysts = new Set(['c.s.0']);
   assert.equal(outlineRowKind(rows.find(r => r.key === 'hammer'), catalysts), 'catalyst');
 
-  // Each list keeps the sections that lead to what it holds, so a tool three recipes down still
+  // The materials list is the whole tree: taking the row away left a hole where something is
+  // plainly needed, so it stays and is marked instead.
+  assert.deepEqual(
+    filterOutlineRows(rows, 'consumed', catalysts).map(r => r.key),
+    ['casing', 'plate', 'hammer'],
+  );
+  // And the tools list keeps the sections that lead to what it holds, so a tool three recipes down
   // arrives with the path that explains where it is needed.
   assert.deepEqual(
     filterOutlineRows(rows, 'catalyst', catalysts).map(r => r.key),
     ['casing', 'hammer'],
   );
-  assert.deepEqual(
-    filterOutlineRows(rows, 'consumed', catalysts).map(r => r.key),
-    ['casing', 'plate'],
-  );
 });
 
-test('a section with nothing for a list is left out of it', () => {
+test('a section with no tool under it is left off the tools list', () => {
   const plate = node('c.s.0', 'plate');
   const casing = node('root.s.0', 'casing', {source: recipe('c', [plate])});
   const hammer = node('root.s.1', 'hammer');
   const root = node('root', 'stargate', {source: recipe('root', [casing, hammer])});
   const rows = resourceOutlineRows(root);
-  // Casing holds nothing the user moved, so the tools list does not carry it for nothing.
+  // Casing holds nothing the user marked, so the tools list does not carry it for nothing.
   assert.deepEqual(
-    filterOutlineRows(rows, 'catalyst', new Set(['hammer'])).map(r => r.key),
+    filterOutlineRows(rows, 'catalyst', new Set(['root.s.1'])).map(r => r.key),
     ['hammer'],
   );
 });
 
 test('a tick cascades only within the list it was tapped in', () => {
   const {root, casing} = withTool();
-  const catalysts = new Set(['hammer']);
+  const catalysts = new Set(['c.s.0']);
   assert.deepEqual(gatherableNodeIdsUnder(casing, {kind: 'consumed', catalysts}), ['c.s.1']);
   assert.deepEqual(gatherableNodeIdsUnder(casing, {kind: 'catalyst', catalysts}), ['c.s.0']);
   // Unscoped still covers the whole branch, which is what the empty state asks about.
@@ -301,11 +304,11 @@ test('a tick cascades only within the list it was tapped in', () => {
 
 test('a tool is one line on its list, and its materials stay on the other', () => {
   // A crafted tool is still a tool: the tools list asks for the hammer however it is come by, and
-  // what a hammer costs is materials. Moving an item moves that item, not the work under it.
+  // what a hammer costs is materials. Marking an item marks that item, not the work under it.
   const ingot = node('h.s.0', 'ingot', {amount: 3});
   const hammer = node('root.s.0', 'hammer', {source: recipe('h', [ingot])});
   const root = node('root', 'stargate', {source: recipe('root', [hammer])});
-  const catalysts = new Set(['hammer']);
+  const catalysts = new Set(['root.s.0']);
 
   assert.deepEqual(gatherableNodeIdsUnder(root, {kind: 'catalyst', catalysts}), ['root.s.0']);
   assert.deepEqual(gatherableNodeIdsUnder(root, {kind: 'consumed', catalysts}), ['h.s.0']);

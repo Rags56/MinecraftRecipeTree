@@ -118,8 +118,6 @@ import {RecipeLoadTimeoutError, withRecipeLoadTimeout} from './recipeLoadTimeout
 import {
   loadManualRetentionOverrides,
   manualRetentionOverrideFor,
-  manualRetentionOverrideKey,
-  persistManualRetentionOverrides,
   type ManualRetentionOverrides,
 } from './manualRetentionOverrides';
 import {planRecipePickerChoices} from './recipePickerPlan';
@@ -408,35 +406,6 @@ function parentRecipeSource(
   return null;
 }
 
-function applyManualRetentionOverrideToTree(
-  root: ItemTreeNode | null,
-  ref: RecipeRef,
-  itemKey: string,
-  reusable: boolean,
-): void {
-  if (!root) return;
-  const stack = [root];
-  while (stack.length > 0) {
-    const current = stack.pop()!;
-    const source = current.source;
-    if (!source) continue;
-    if (
-      source.kind === 'recipe' &&
-      source.direction === 'inputs' &&
-      source.ref?.[0] === ref[0] &&
-      source.ref[1] === ref[1]
-    ) {
-      for (const child of source.inputs) {
-        if (child.key !== itemKey) continue;
-        child.nonConsumed = reusable;
-        child.retentionMode = reusable ? 'reusable' : undefined;
-        child.retentionUses = undefined;
-      }
-    }
-    stack.push(...source.inputs);
-  }
-}
-
 /** Dragging the canvas must never start a text selection (web). */
 const noSelect = Platform.OS === 'web' ? ({userSelect: 'none'} as unknown as object) : null;
 const COMPACT_MODE_KEY = 'graphCompactMode';
@@ -667,7 +636,13 @@ export function GraphScreen({
   const data = useData();
   const account = useUser();
   // Shared with the resources tab: one list, so marking a tool in either place shows in both.
-  const {isCatalyst, setCatalyst} = useCatalystItems(data.descriptor);
+  const {catalysts, isCatalyst, setCatalyst} = useCatalystItems(
+    data.descriptor,
+    graphRootKey ?? null,
+  );
+  // Read while a branch is being built, which happens outside render.
+  const catalystsRef = useRef(catalysts);
+  catalystsRef.current = catalysts;
   const {
     hiddenStages: hiddenRecipeStages,
     toggleStage: toggleRecipeStage,
@@ -1175,7 +1150,10 @@ export function GraphScreen({
           const retentionOverride = graphDirection === 'inputs'
             ? manualRetentionOverrideFor(manualRetentionOverridesRef.current, ref, spec.key)
             : undefined;
-          const nonConsumed = retentionOverride ?? spec.nonConsumed;
+          // A node the user called a tool is one again when this branch is built back, which is what
+          // makes the mark survive a collapse, a recipe change further up, or a restart.
+          const nonConsumed =
+            catalystsRef.current.has(`${sourceId}.${String(i)}`) || (retentionOverride ?? spec.nonConsumed);
           const child: ItemTreeNode = {
             id: `${sourceId}.${i}`,
             key: spec.key,
@@ -2627,27 +2605,22 @@ export function GraphScreen({
   );
   const treatNodeAsTool = useCallback(
     (node: ItemTreeNode, isTool: boolean) => {
-      // The list the item is shown on is the user's word about the item, so it is recorded whatever
-      // the node's place in the tree -- the root has no parent recipe to override.
+      // One place picked is one place marked. Sweeping every node asking for the same item, which is
+      // what the per-recipe override did, turned one decision into an opinion about the rest of the
+      // tree -- and the rest of the tree may well want the thing consumed.
       setCatalyst(node, isTool);
+      node.nonConsumed = isTool;
+      node.retentionMode = isTool ? 'reusable' : undefined;
+      node.retentionUses = undefined;
+      setNodeMenu(null);
+      bump();
       const parent = parentRecipeSource(rootRef.current, node);
       const ref = parent?.kind === 'recipe' ? parent.ref : undefined;
-      if (!parent || parent.direction !== 'inputs' || !ref) {
-        setNodeMenu(null);
-        bump();
-        return;
-      }
+      if (!parent || parent.direction !== 'inputs' || !ref) return;
       const reusable = isTool;
-      const overrideKey = manualRetentionOverrideKey(ref, node.key);
-      const next = {
-        ...manualRetentionOverridesRef.current,
-        [overrideKey]: reusable,
-      };
-      manualRetentionOverridesRef.current = next;
-      setManualRetentionOverrides(next);
-      persistManualRetentionOverrides(data.descriptor, next);
-      applyManualRetentionOverrideToTree(rootRef.current, ref, node.key, reusable);
       const category = data.categories[ref[0]];
+      // Still reported: "this recipe keeps this ingredient" is a claim about the pack's data, and
+      // worth sending whether or not the rest of the tree is marked with it.
       console.info('A recipe ingredient retention override was changed.', {
         packSlug: data.descriptor.slug,
         publicationId: data.descriptor.publicationId,
@@ -2658,8 +2631,6 @@ export function GraphScreen({
         itemName: data.itemsByKey.get(node.key)?.n ?? null,
         reusable,
       });
-      setNodeMenu(null);
-      bump();
       void reportRecipeRetentionOverride(
         data.descriptor,
         ref,
@@ -5408,7 +5379,7 @@ const CompactItemNodeView = React.memo(function CompactItemNodeView({
       {...signalTarget(`graph.node.expand.${nodeDepthBucket(node)}`)}
       {...handlers.contextMenuProps}
       accessibilityRole={selectable ? 'button' : undefined}
-      accessibilityLabel={`${name}, quantity ${formatIngredientQuantity(node.key, requiredAmount)}${terminal ? `, ${terminalLabel}` : ''}${deferredDuplicate ? ', recipe expanded elsewhere, tap to move expansion here' : ''}${byproductLabel ? `, ${byproductLabel}` : ''}${node.nonConsumed ? ', not consumed' : ''}${node.consumptionProbability !== undefined ? `, ${node.consumptionProbability == null ? 'unknown' : `${String(Math.round(node.consumptionProbability * 10_000) / 100)} percent`} consume chance` : ''}${node.productionProbability !== undefined ? `, ${node.productionProbability == null ? 'unknown' : `${String(Math.round(node.productionProbability * 10_000) / 100)} percent`} produce chance` : ''}${isRoot ? ', open amount and recipe controls' : selectable && !deferredDuplicate ? byproductCoverage?.remainingAmount === 0 ? ', navigate to producing recipe' : ', choose source' : ''}${onChangeRecipe ? ', double tap to change recipe' : ''}, long press or right click for node options`}
+      accessibilityLabel={`${name}, quantity ${formatIngredientQuantity(node.key, requiredAmount)}${terminal ? `, ${terminalLabel}` : ''}${deferredDuplicate ? ', recipe expanded elsewhere, tap to move expansion here' : ''}${byproductLabel ? `, ${byproductLabel}` : ''}${node.nonConsumed ? ', tool or catalyst' : ''}${node.consumptionProbability !== undefined ? `, ${node.consumptionProbability == null ? 'unknown' : `${String(Math.round(node.consumptionProbability * 10_000) / 100)} percent`} consume chance` : ''}${node.productionProbability !== undefined ? `, ${node.productionProbability == null ? 'unknown' : `${String(Math.round(node.productionProbability * 10_000) / 100)} percent`} produce chance` : ''}${isRoot ? ', open amount and recipe controls' : selectable && !deferredDuplicate ? byproductCoverage?.remainingAmount === 0 ? ', navigate to producing recipe' : ', choose source' : ''}${onChangeRecipe ? ', double tap to change recipe' : ''}, long press or right click for node options`}
       disabled={!selectable || node.loading}
       focusable
       onPress={handlers.press}
@@ -5615,7 +5586,7 @@ const ItemNodeView = React.memo(function ItemNodeView({
           {node.retentionMode === 'durability'
             ? `  tool · ${String(node.retentionUses ?? '?')} uses`
             : node.nonConsumed
-              ? '  reusable'
+              ? '  tool/catalyst'
               : ''}
           {node.consumptionProbability !== undefined
             ? `  ${node.consumptionProbability == null ? '?' : `${String(Math.round(node.consumptionProbability * 10_000) / 100)}%`} consume`

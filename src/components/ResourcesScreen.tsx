@@ -69,7 +69,7 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
   // Which items the user has moved to the tools list, shared with the tree so the two cannot
   // disagree. Nothing arrives there on its own: a pack saying a recipe keeps an item describes the
   // craft, not how someone wants to shop for it.
-  const {catalysts, isCatalyst} = useCatalystItems(data.descriptor);
+  const {catalysts, isCatalyst} = useCatalystItems(data.descriptor, snapshot?.rootKey ?? null);
   const window = useWindowDimensions();
   const interfaceScale = useContext(InterfaceScaleContext);
   const outline = useMemo(
@@ -298,23 +298,29 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
               {formatIngredientQuantity(snapshot.rootKey, snapshot.rootAmount)}
             </Text>
           </View>
-          {/* Whose progress this is, since the bar follows the list on screen rather than both. */}
+          {/*
+            * A tool is not gathered, it is owned: the tools list is what the build needs you to have
+            * rather than a checklist to work through, so it says how many and leaves it there.
+            */}
           <Text style={styles.headerDetail}>
-            {countable.size} of {gatherable.length}{' '}
-            {listKind === 'catalyst' ? 'tools ready' : 'items gathered'}
+            {listKind === 'catalyst'
+              ? `${catalystNodeIds.length} needed by this build`
+              : `${countable.size} of ${gatherable.length} gathered`}
           </Text>
         </View>
-        <Text
-          style={styles.percentage}
-          accessibilityLabel={`${percentage} percent of ${
-            listKind === 'catalyst' ? 'tools and machines' : 'items'
-          } gathered`}>
-          {percentage}%
-        </Text>
+        {listKind === 'consumed' && (
+          <Text
+            style={styles.percentage}
+            accessibilityLabel={`${percentage} percent of materials gathered`}>
+            {percentage}%
+          </Text>
+        )}
       </View>
-      <View style={styles.progressTrack} accessibilityRole="progressbar">
-        <View style={[styles.progressFill, {width: `${percentage}%`}]} />
-      </View>
+      {listKind === 'consumed' && (
+        <View style={styles.progressTrack} accessibilityRole="progressbar">
+          <View style={[styles.progressFill, {width: `${percentage}%`}]} />
+        </View>
+      )}
       <View style={styles.dashedRule} />
       <View style={styles.listTabs}>
         {(
@@ -326,6 +332,13 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
           const nodeIds = kind === 'catalyst' ? catalystNodeIds : gatherableIn('consumed');
           const ticked = nodeIds.filter(nodeId => completed.has(nodeId)).length;
           const selected = listKind === kind;
+          // Materials are counted off as they are gathered; tools are counted, full stop.
+          const count =
+            nodeIds.length === 0
+              ? 'none'
+              : kind === 'catalyst'
+                ? String(nodeIds.length)
+                : `${ticked}/${nodeIds.length}`;
           return (
             <TouchableOpacity
               key={kind}
@@ -339,7 +352,7 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
               </Text>
               {/* Each list carries its own count, so neither kind of work hides the other. */}
               <Text style={[styles.listTabCount, selected && styles.listTabCountSelected]}>
-                {nodeIds.length === 0 ? 'none' : `${ticked}/${nodeIds.length}`}
+                {count}
               </Text>
             </TouchableOpacity>
           );
@@ -360,6 +373,8 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
           rows.map(row => (
             <OutlineRow
               key={row.nodeId}
+              tool={catalysts.has(row.nodeId)}
+              counts={!catalysts.has(row.nodeId)}
               row={row}
               name={displayIngredientName(
                 data.itemsByKey.get(row.key)?.n ?? row.key,
@@ -431,6 +446,8 @@ const OutlineRow = React.memo(function OutlineRow({
   done,
   partial,
   pending,
+  tool,
+  counts,
   onToggle,
   onOpen,
   onTick,
@@ -443,6 +460,10 @@ const OutlineRow = React.memo(function OutlineRow({
   /** Part of this branch is gathered: the tick shows a dash rather than a mark or nothing. */
   partial: boolean;
   pending: boolean;
+  /** The user has called this a tool: the same dashed highlight and subheading the canvas gives it. */
+  tool: boolean;
+  /** Tools are shown among the materials for context, but gathering one is a job on the other list. */
+  counts: boolean;
   onToggle: (nodeId: string) => void;
   onOpen: (nodeId: string) => void;
   onTick: (row: ResourceOutlineRow, done: boolean) => void;
@@ -471,6 +492,7 @@ const OutlineRow = React.memo(function OutlineRow({
       style={[
         styles.row,
         section && styles.sectionRow,
+        tool && styles.toolRow,
         done && styles.rowDone,
         // Indented by depth, which is what makes this read as the tree it came from.
         {marginLeft: row.depth * 18},
@@ -512,18 +534,27 @@ const OutlineRow = React.memo(function OutlineRow({
           <View style={styles.disclosureSpacer} />
         )}
         <ItemIcon item={item} itemKey={row.key} size={iconSize} />
-        <Text
-          style={[
-            styles.rowName,
-            section && styles.sectionName,
-            done && styles.rowNameDone,
-          ]}
-          numberOfLines={2}>
-          {name}
-        </Text>
+        <View style={styles.rowNameBlock}>
+          <Text
+            style={[
+              styles.rowName,
+              section && styles.sectionName,
+              done && styles.rowNameDone,
+            ]}
+            numberOfLines={2}>
+            {name}
+          </Text>
+          {tool && (
+            <Text style={styles.toolSub} numberOfLines={1}>
+              {row.retentionMode === 'durability'
+                ? `tool · ${String(row.retentionUses ?? '?')} uses`
+                : 'tool/catalyst'}
+            </Text>
+          )}
+        </View>
         {pending ? (
           <ActivityIndicator color={theme.accent} />
-        ) : (
+        ) : !counts ? null : (
           <View style={styles.rowAmounts}>
             <Text
               style={[
@@ -543,6 +574,7 @@ const OutlineRow = React.memo(function OutlineRow({
           </View>
         )}
       </Pressable>
+      {counts && (
       <TouchableOpacity
         {...signalTarget(section ? 'resources.toggle-branch' : 'resources.toggle-gathered')}
         accessibilityRole="checkbox"
@@ -563,6 +595,7 @@ const OutlineRow = React.memo(function OutlineRow({
           {done ? '✓' : partial ? '–' : ''}
         </Text>
       </TouchableOpacity>
+      )}
     </View>
   );
 });
@@ -614,6 +647,14 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   progressFill: {height: 6, borderRadius: 3, backgroundColor: theme.accent},
+  /** The same dashed teal the canvas gives a node the user has called a tool. */
+  toolRow: {
+    borderColor: theme.transfer,
+    borderStyle: 'dashed',
+    backgroundColor: '#15302f',
+  },
+  rowNameBlock: {flex: 1, minWidth: 0},
+  toolSub: {color: theme.transfer, fontSize: 10, marginTop: 1},
   listTabs: {flexDirection: 'row', gap: 6, marginBottom: 10},
   listTab: {
     flexDirection: 'row',
@@ -664,7 +705,7 @@ const styles = StyleSheet.create({
     paddingLeft: 10,
     paddingVertical: 8,
   },
-  rowName: {flex: 1, minWidth: 0, color: theme.text, fontSize: 13, fontWeight: '600'},
+  rowName: {minWidth: 0, color: theme.text, fontSize: 13, fontWeight: '600'},
   rowNameDone: {color: theme.textDim, textDecorationLine: 'line-through'},
   rowAmount: {color: theme.accent, fontSize: 13, fontWeight: '700'},
   /** ×? means the recipe exported no usable quantity, which is not a number to read as one. */

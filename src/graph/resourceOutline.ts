@@ -1,4 +1,3 @@
-import {catalystItemIdentity} from './catalystItems.ts';
 import type {ItemTreeNode} from './model';
 import type {NodeByproductCoverage} from './treeTotals.ts';
 
@@ -44,9 +43,10 @@ export interface ResourceOutlineRow {
 export type ResourceOutlineKind = 'consumed' | 'catalyst';
 
 /**
- * The items the user has moved to the catalysts list, by logical identity. Nothing is put there on
- * the pack's word: `consumed` below says what the recipe does with an item, which is worth knowing
- * but is not the same as how someone wants to shop for it.
+ * The places in the tree the user has called a tool, by node id. Nothing is on the pack's word:
+ * `consumed` below says what the recipe does with an item, which is worth knowing but is not the
+ * same as how someone wants to shop for it. One place picked is one place marked -- two recipes
+ * wanting the same hammer are two separate decisions.
  */
 export type CatalystItems = ReadonlySet<string>;
 
@@ -54,12 +54,7 @@ export function outlineRowKind(
   row: ResourceOutlineRow,
   catalysts?: CatalystItems,
 ): ResourceOutlineKind {
-  return catalysts?.has(outlineRowIdentity(row)) ? 'catalyst' : 'consumed';
-}
-
-/** The logical item a row asks for, which is what a list choice is remembered against. */
-export function outlineRowIdentity(row: ResourceOutlineRow): string {
-  return catalystItemIdentity({key: row.key, tag: row.tag, variantCount: row.variants});
+  return catalysts?.has(row.nodeId) ? 'catalyst' : 'consumed';
 }
 
 export interface ResourceOutlineOptions {
@@ -160,8 +155,7 @@ export function gatherableNodeIdsUnder(
   options: GatherableOptions = {},
 ): string[] {
   const {byproductCoverageByNode, kind, catalysts} = options;
-  const isCatalyst = (current: ItemTreeNode) =>
-    catalysts?.has(catalystItemIdentity(current)) === true;
+  const isCatalyst = (current: ItemTreeNode) => catalysts?.has(current.id) === true;
   // Covered by a byproduct is not something to go and get, so turning byproducts on moves the count
   // as well as the amounts.
   const covered = (current: ItemTreeNode) =>
@@ -197,6 +191,10 @@ export function filterOutlineRows(
   kind: ResourceOutlineKind,
   catalysts?: CatalystItems,
 ): ResourceOutlineRow[] {
+  // The materials list is the whole tree. A tool stays where it sits, marked and uncounted, because
+  // its place in the build is worth seeing even when gathering it is a different job -- taking the
+  // row away left a hole where something is plainly needed.
+  if (kind === 'consumed') return [...rows];
   const keep = rows.map(row => outlineRowKind(row, catalysts) === kind);
   for (let index = rows.length - 1; index >= 0; index -= 1) {
     if (keep[index] || !rows[index].expanded) continue;
