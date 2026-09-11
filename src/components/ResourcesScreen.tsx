@@ -54,12 +54,11 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
     [data.descriptor, rootKey],
   );
 
+  // Deliberately does not switch tabs: choosing a recipe here updates the tree in the background
+  // and this list re-reads the totals that come back from it.
   const openInTree = useCallback(
-    (total: TreeTotal) => {
-      snapshot?.onResourceTap(total);
-      setTab('graph');
-    },
-    [setTab, snapshot],
+    (total: TreeTotal) => snapshot?.onResourceTap(total),
+    [snapshot],
   );
 
   if (!snapshot || resources.length === 0) {
@@ -168,7 +167,10 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
 }
 
 const styles = StyleSheet.create({
-  screen: {flex: 1, paddingHorizontal: 12, paddingTop: 12},
+  // Opaque on purpose: inactive workspace panes are absolutely positioned and merely faded out
+  // rather than unmounted, so a transparent screen scrolls over whatever is still painted behind
+  // it and smears.
+  screen: {flex: 1, paddingHorizontal: 12, paddingTop: 12, backgroundColor: theme.bg},
   /** Top left, and the same preference the tree toggles: this list is what it changes most. */
   byproducts: {
     alignSelf: 'flex-start',
@@ -251,7 +253,13 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   tickMarkDone: {borderColor: theme.accent, backgroundColor: '#173724'},
-  empty: {flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24},
+  empty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: theme.bg,
+  },
   emptyTitle: {color: theme.text, fontSize: 16, fontWeight: '700'},
   emptyText: {
     color: theme.textDim,

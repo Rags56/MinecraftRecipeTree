@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {
   loadCompletedResources,
@@ -102,4 +103,28 @@ test('ignores ticks for resources the tree no longer needs', () => {
   const live = new Set(['iron']);
   assert.equal(prunedCompletedResources(resources, live), live);
   assert.equal(prunedCompletedResources(resources, new Set()).size, 0);
+});
+
+test('the resources list stays put when a resource is opened in the tree', () => {
+  const source = readFileSync(
+    new URL('../components/ResourcesScreen.tsx', import.meta.url),
+    'utf8',
+  );
+  const handler = source.slice(source.indexOf('const openInTree'));
+  const body = handler.slice(0, handler.indexOf('  );') + 4);
+  assert.match(body, /onResourceTap\(total\)/u);
+  // Switching tabs here would take the user away from the list they are working through; the
+  // tree updates behind and the published totals bring the change back to this screen.
+  assert.doesNotMatch(body, /setTab\(/u);
+});
+
+test('the resources screen paints an opaque background', () => {
+  // Inactive workspace panes are absolutely positioned and faded rather than unmounted, so a
+  // transparent screen smears whatever is still painted behind it as it scrolls.
+  const source = readFileSync(
+    new URL('../components/ResourcesScreen.tsx', import.meta.url),
+    'utf8',
+  );
+  assert.match(source, /screen: \{[^}]*backgroundColor: theme\.bg/u);
+  assert.match(source, /empty: \{[\s\S]*?backgroundColor: theme\.bg/u);
 });
