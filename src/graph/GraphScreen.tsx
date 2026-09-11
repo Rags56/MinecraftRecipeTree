@@ -3989,19 +3989,18 @@ export function GraphScreen({
           style={[
             styles.anchor,
             Platform.OS !== 'web' && styles.nativeAnchor,
+            // Translated with a transform rather than left/top on both web tiers: left and top
+            // are layout properties, so panning reflowed every node in the tree each frame, while
+            // a transform is composited. Scale still belongs to the inner layer below, so this
+            // keeps translation outside it exactly as before.
             Platform.OS === 'web'
-              ? lowDetailGraph
-                ? ({
-                    transform: [
-                      {translateX: displayTransform.x},
-                      {translateY: displayTransform.y},
-                    ],
-                    willChange: 'transform',
-                  } as unknown as object)
-                : {
-                    left: displayTransform.x,
-                    top: displayTransform.y,
-                  }
+              ? ({
+                  transform: [
+                    {translateX: displayTransform.x},
+                    {translateY: displayTransform.y},
+                  ],
+                  willChange: 'transform',
+                } as unknown as object)
               : {
                   transform: [
                     {translateX: displayTransform.x},

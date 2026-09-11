@@ -38,15 +38,28 @@ test('native graph scale avoids composited scaling and snaps to physical pixels'
 test('web graph zoom keeps detailed content crisp and composites low-detail trees', () => {
   assert.match(graphScreenSource, /zoom:\s*displayTransform\.scale/u);
   const anchorMarkup = graphScreenSource.slice(
-    graphScreenSource.indexOf('Keep translation outside the detailed web scale layer'),
-    graphScreenSource.indexOf('{!lowDetailGraph && renderedGraph?.edges.map'),
+    graphScreenSource.indexOf('Translated with a transform rather than left/top'),
+    graphScreenSource.indexOf('{!rasterLowDetailGraph && renderedGraph?.edges.map'),
   );
-  assert.match(anchorMarkup, /Platform\.OS === 'web'[\s\S]*?left:\s*displayTransform\.x/u);
+  // Translation stays outside the layer that scales, so zoom keeps owning crispness: the outer
+  // view only ever translates, and it does so with a transform rather than by reflowing.
+  assert.match(anchorMarkup, /Platform\.OS === 'web'[\s\S]*?translateX:\s*displayTransform\.x/u);
+  // The web branch's transform ends at translateY: scaling belongs to the inner zoom layer, and
+  // adding it here would scale the nodes twice.
   assert.match(
     anchorMarkup,
-    /lowDetailGraph[\s\S]*?translateX:\s*displayTransform\.x[\s\S]*?transformOrigin:\s*'0 0'/u,
+    /Platform\.OS === 'web'[\s\S]*?translateY: displayTransform\.y\},\s*\],\s*willChange: 'transform',/u,
   );
-  assert.match(anchorMarkup, /Platform\.OS !== 'web'[\s\S]*?translateX:\s*displayTransform\.x/u);
+  assert.match(
+    anchorMarkup,
+    /lowDetailGraph[\s\S]*?transformOrigin:\s*'0 0'/u,
+  );
+  // Native still applies translation and scale together on one layer, which is the ternary's
+  // other branch rather than a platform check of its own.
+  assert.match(
+    anchorMarkup,
+    /: \{\s*transform: \[\s*\{translateX: displayTransform\.x\},\s*\{translateY: displayTransform\.y\},\s*\{scale: displayTransform\.scale\},/u,
+  );
 });
 
 test('far-zoom web graphs use one inert canvas without recipe hover expansion', () => {
@@ -246,4 +259,16 @@ test('gesture updates are coalesced to one render per frame', () => {
   assert.match(graphScreenSource, /applyTransform\(transformCenteredOn\(/u);
   // The frame must be released, or an unmount mid-gesture leaves it pointing at a dead setState.
   assert.match(graphScreenSource, /cancelAnimationFrame\(transformFrameRef\.current\)/u);
+});
+
+test('panning composites on web instead of reflowing the tree', () => {
+  // left and top are layout properties: animating them reflowed every node in the tree on every
+  // frame, which is why panning stuttered on web while zooming -- far sparser events -- did not.
+  const anchor = graphScreenSource.slice(
+    graphScreenSource.indexOf('Translated with a transform rather than left/top'),
+  );
+  const block = anchor.slice(0, anchor.indexOf(']}>'));
+  assert.match(block, /willChange: 'transform'/u);
+  assert.doesNotMatch(block, /left: displayTransform\.x/u);
+  assert.doesNotMatch(block, /top: displayTransform\.y/u);
 });
