@@ -158,3 +158,39 @@ test('a tag requirement keeps its own identity through a cascade', () => {
   // Both are beneath the same section, and ticking it must not merge two different requirements.
   assert.deepEqual(gatherableIdentitiesUnder(parent).sort(), ['#forge:ingots/iron', 'iron_ingot']);
 });
+
+test('turning byproducts on recalculates the list, not just the setting', () => {
+  // requiredByNode is the gross requirement and does not move when byproducts are toggled, so a
+  // list showing only that changed nothing at all when the preference was flipped. Coverage is
+  // what moves, and it decides both what a row says and whether it is still something to gather.
+  const {root, casing, plate} = tree();
+  const covered = new Map([
+    [plate.id, {nodeId: plate.id, key: 'plate', requiredAmount: 8, creditedAmount: 8, remainingAmount: 0, allocations: []}],
+  ]);
+
+  const off = resourceOutlineRows(root);
+  assert.equal(off.find(r => r.key === 'plate').byproductCovered, false);
+  assert.equal(off.find(r => r.key === 'plate').byproductCredited, 0);
+  assert.deepEqual(gatherableIdentitiesUnder(root).sort(), ['core', 'plate', 'rod']);
+
+  const on = resourceOutlineRows(root, {byproductCoverageByNode: covered});
+  assert.equal(on.find(r => r.key === 'plate').byproductCovered, true);
+  assert.equal(on.find(r => r.key === 'plate').byproductCredited, 8);
+  // Nothing to gather for a covered row, so the count and the percentage move with it.
+  assert.deepEqual(gatherableIdentitiesUnder(root, covered).sort(), ['core', 'rod']);
+  assert.deepEqual(gatherableIdentitiesUnder(casing, covered), ['rod']);
+});
+
+test('a partly covered row keeps its requirement and states the credit', () => {
+  const {root, plate} = tree();
+  const partial = new Map([
+    [plate.id, {nodeId: plate.id, key: 'plate', requiredAmount: 8, creditedAmount: 3, remainingAmount: 5, allocations: []}],
+  ]);
+  const row = resourceOutlineRows(root, {byproductCoverageByNode: partial}).find(
+    r => r.key === 'plate',
+  );
+  assert.equal(row.byproductCredited, 3);
+  assert.equal(row.byproductCovered, false);
+  // Still something to go and get, since a byproduct only covered part of it.
+  assert.ok(gatherableIdentitiesUnder(root, partial).includes('plate'));
+});

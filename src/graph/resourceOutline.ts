@@ -1,5 +1,5 @@
 import type {ItemTreeNode} from './model';
-import {treeTotalIdentity} from './treeTotals.ts';
+import {treeTotalIdentity, type NodeByproductCoverage} from './treeTotals.ts';
 
 /**
  * The resources list as the shape of the tree rather than one flat total. An item whose recipe is
@@ -20,13 +20,28 @@ export interface ResourceOutlineRow {
   expanded: boolean;
   /** Its recipe is set but its subtree is folded away, here and in the tree alike. */
   collapsed: boolean;
+  /**
+   * What a byproduct of something else in the tree already supplies. The amount above is the gross
+   * requirement, which does not move when byproducts are toggled -- this is what does, and what
+   * makes the toggle change the list rather than only the setting.
+   */
+  byproductCredited: number;
+  /** Fully supplied by byproducts: nothing here to go and get. */
+  byproductCovered: boolean;
 }
 
 export interface ResourceOutlineOptions {
   /** Amounts the tree calculation worked out, keyed by node id. */
   requiredByNode?: ReadonlyMap<string, number | null>;
+  /** Byproduct credit per node, which is empty when byproducts are turned off. */
+  byproductCoverageByNode?: ReadonlyMap<string, NodeByproductCoverage>;
   /** An active branch focus: only the nodes it allows are listed. */
   visibleNodeIds?: ReadonlySet<string>;
+}
+
+/** Supplied entirely by something the tree already makes, so there is nothing left to gather. */
+function isByproductCovered(coverage: NodeByproductCoverage | undefined): boolean {
+  return coverage !== undefined && coverage.remainingAmount === 0 && coverage.creditedAmount > 0;
 }
 
 /** A node is a section once its recipe is set, whether that recipe is currently folded or not. */
@@ -40,7 +55,7 @@ export function resourceOutlineRows(
 ): ResourceOutlineRow[] {
   if (!root) return [];
   const rows: ResourceOutlineRow[] = [];
-  const {requiredByNode, visibleNodeIds} = options;
+  const {requiredByNode, byproductCoverageByNode, visibleNodeIds} = options;
 
   const visit = (node: ItemTreeNode, depth: number) => {
     // A folded branch keeps its subtree, so it is walked for structure but never listed: its
@@ -67,6 +82,8 @@ export function resourceOutlineRows(
         variants: child.variantCount ?? 1,
         expanded: child.source !== undefined,
         collapsed: child.source === undefined && child.collapsedSource !== undefined,
+        byproductCredited: byproductCoverageByNode?.get(child.id)?.creditedAmount ?? 0,
+        byproductCovered: isByproductCovered(byproductCoverageByNode?.get(child.id)),
       });
       if (child.source) visit(child, depth + 1);
     }
@@ -95,18 +112,25 @@ export function outlineRowIdentity(row: ResourceOutlineRow): string {
  * actually collects. It follows a folded subtree as well as an open one, so ticking a section that
  * is currently put away still ticks what it holds rather than silently nothing.
  */
-export function gatherableIdentitiesUnder(node: ItemTreeNode): string[] {
+export function gatherableIdentitiesUnder(
+  node: ItemTreeNode,
+  byproductCoverageByNode?: ReadonlyMap<string, NodeByproductCoverage>,
+): string[] {
+  const identityOf = (current: ItemTreeNode) =>
+    treeTotalIdentity({
+      key: current.key,
+      tag: current.tag,
+      variants: current.variantCount ?? 1,
+    });
   const identities = new Set<string>();
   const visit = (current: ItemTreeNode) => {
     const source = current.source ?? current.collapsedSource;
     if (!source) {
-      identities.add(
-        treeTotalIdentity({
-          key: current.key,
-          tag: current.tag,
-          variants: current.variantCount ?? 1,
-        }),
-      );
+      // Covered by a byproduct is not something to go and get, so turning byproducts on moves the
+      // count as well as the amounts.
+      if (!isByproductCovered(byproductCoverageByNode?.get(current.id))) {
+        identities.add(identityOf(current));
+      }
       return;
     }
     for (const child of source.inputs) visit(child);
@@ -114,9 +138,7 @@ export function gatherableIdentitiesUnder(node: ItemTreeNode): string[] {
   const source = node.source ?? node.collapsedSource;
   // The node itself is a resource when it has no recipe; otherwise only its ends count.
   if (!source) {
-    return [
-      treeTotalIdentity({key: node.key, tag: node.tag, variants: node.variantCount ?? 1}),
-    ];
+    return isByproductCovered(byproductCoverageByNode?.get(node.id)) ? [] : [identityOf(node)];
   }
   for (const child of source.inputs) visit(child);
   return [...identities];

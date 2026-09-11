@@ -277,7 +277,10 @@ test('the checklist measures the tree rather than the flat totals', () => {
     new URL('../components/ResourcesScreen.tsx', import.meta.url),
     'utf8',
   );
-  assert.match(screen, /gatherableIdentitiesUnder\(snapshot\.root\)/u);
+  assert.match(
+    screen,
+    /gatherableIdentitiesUnder\(\s*snapshot\.root,\s*snapshot\.totals\.byproductCoverageByNode,?\s*\)/u,
+  );
   assert.match(screen, /identityCompletionPercentage\(gatherable, countable\)/u);
   // totals.inputs still feeds the CSV, but nothing about progress depends on it any more.
   assert.doesNotMatch(screen, /totals\.inputs/u);

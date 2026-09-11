@@ -60,6 +60,7 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
       snapshot
         ? resourceOutlineRows(snapshot.root, {
             requiredByNode: snapshot.totals.requiredByNode,
+            byproductCoverageByNode: snapshot.totals.byproductCoverageByNode,
             visibleNodeIds: snapshot.visibleNodeIds,
           })
         : [],
@@ -70,7 +71,10 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
   // Everything the tree needs gathering, folded branches included: folding is a view change, so
   // progress cannot depend on what happens to be open.
   const gatherable = useMemo(
-    () => (snapshot?.root ? gatherableIdentitiesUnder(snapshot.root) : []),
+    () =>
+      snapshot?.root
+        ? gatherableIdentitiesUnder(snapshot.root, snapshot.totals.byproductCoverageByNode)
+        : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps -- version tracks in-place tree edits.
     [snapshot, snapshot?.version],
   );
@@ -123,7 +127,12 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
   const identitiesFor = useCallback(
     (row: ResourceOutlineRow) => {
       const node = nodeById(row.nodeId);
-      return node ? gatherableIdentitiesUnder(node) : [outlineRowIdentity(row)];
+      const coverage = snapshotRef.current?.totals.byproductCoverageByNode;
+      return node
+        ? gatherableIdentitiesUnder(node, coverage)
+        : row.byproductCovered
+          ? []
+          : [outlineRowIdentity(row)];
     },
     [nodeById],
   );
@@ -349,9 +358,23 @@ const OutlineRow = React.memo(function OutlineRow({
         {pending ? (
           <ActivityIndicator color={theme.accent} />
         ) : (
-          <Text style={[styles.rowAmount, row.amount == null && styles.rowAmountUnknown]}>
-            {amount}
-          </Text>
+          <View style={styles.rowAmounts}>
+            <Text
+              style={[
+                styles.rowAmount,
+                row.amount == null && styles.rowAmountUnknown,
+                row.byproductCovered && styles.rowAmountCovered,
+              ]}>
+              {amount}
+            </Text>
+            {row.byproductCredited > 0 && (
+              <Text style={styles.byproductNote}>
+                {row.byproductCovered
+                  ? 'from byproducts'
+                  : `${formatIngredientQuantity(row.key, row.byproductCredited)} from byproducts`}
+              </Text>
+            )}
+          </View>
         )}
       </TouchableOpacity>
       <TouchableOpacity
@@ -463,6 +486,10 @@ const styles = StyleSheet.create({
   rowAmount: {color: theme.accent, fontSize: 13, fontWeight: '700'},
   /** ×? means the recipe exported no usable quantity, which is not a number to read as one. */
   rowAmountUnknown: {color: theme.textDim, fontWeight: '600'},
+  rowAmounts: {alignItems: 'flex-end'},
+  /** Supplied by the tree itself, so it reads as accounted for rather than as still owed. */
+  rowAmountCovered: {color: theme.accentAlt, textDecorationLine: 'line-through'},
+  byproductNote: {color: theme.accentAlt, fontSize: 9, marginTop: 1},
   tick: {
     width: Platform.OS === 'web' ? 40 : 52,
     alignSelf: 'stretch',
