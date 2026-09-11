@@ -97,16 +97,6 @@ test('collapsed graph controls put their label on the chevron button', () => {
   assert.doesNotMatch(graphScreenSource, /controlMenuBtnText/u);
 });
 
-test('very large trees lock unique mode without changing the saved preference', () => {
-  assert.match(
-    graphScreenSource,
-    /shouldRequireUniqueRecipes\(graph\?\.nodes\.length \?\? 0\)[\s\S]*?updateExpandRecipesOnce\(true, false\)/u,
-  );
-  assert.match(graphScreenSource, /Unique · Locked/u);
-  assert.match(graphScreenSource, /keeps very large trees\s+responsive/u);
-  assert.match(graphScreenSource, /largeTreeUniqueModeRootRef\.current !== root/u);
-});
-
 test('compact byproduct nodes support alternate recipe gestures', () => {
   assert.match(
     graphScreenSource,

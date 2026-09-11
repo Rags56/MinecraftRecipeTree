@@ -29,7 +29,15 @@ export const ROOT_SOURCE_ACTIONS_HEIGHT = 46;
 export const ROOT_ATTACHED_ACTIONS_WIDTH = 220;
 export const ROOT_ATTACHED_ACTIONS_HEIGHT = 62;
 /** Vertical gap between tree levels (rows). */
-const LEVEL_GAP = 48;
+/**
+ * Every child's edge radiates from the same point on its parent, so on a wide level those
+ * segments leave at nearly the same angle and visually merge. Elbow routing is the usual answer
+ * and was tried here: shared horizontal rows made unrelated branches look connected wherever two
+ * parents' runs overlapped, which is worse. Vertical room is what separates them instead -- the
+ * further a child sits below its parent, the wider apart its segment ends up from its siblings'.
+ * Paid for in panning, so this is a deliberate middle rather than as much as would be legible.
+ */
+const LEVEL_GAP = 72;
 /** Horizontal gap between siblings. */
 const SIBLING_GAP = 18;
 const EDGE_T = 2;

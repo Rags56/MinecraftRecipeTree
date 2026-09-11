@@ -15,11 +15,6 @@ export function shouldUseLowDetailGraph(
   );
 }
 
-/** Duplicate recipe branches become prohibitively expensive once a graph is dense. */
-export function shouldRequireUniqueRecipes(nodeCount: number): boolean {
-  return Number.isFinite(nodeCount) && nodeCount >= DENSE_GRAPH_NODE_THRESHOLD;
-}
-
 /** Amount text turns into visual noise before node contents are otherwise too small to render. */
 export function shouldShowNodeAmounts(
   scale: number,

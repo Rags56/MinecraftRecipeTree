@@ -198,7 +198,6 @@ import {GRAPH_VIEWPORT_OVERSCAN, visibleGraphElements} from './viewportCulling';
 import {indexedRecipeRefs} from './indexedRecipeRefs';
 import {
   DENSE_GRAPH_NODE_THRESHOLD,
-  shouldRequireUniqueRecipes,
   shouldShowNodeAmounts,
   shouldUseLowDetailGraph,
 } from './renderDetail';
@@ -736,15 +735,7 @@ export function GraphScreen({
   const [expandRecipesOnce, setExpandRecipesOnce] = useState(loadExpandRecipesOnce);
   const expandRecipesOnceRef = useRef(expandRecipesOnce);
   expandRecipesOnceRef.current = expandRecipesOnce;
-  const [largeTreeUniqueModeRequired, setLargeTreeUniqueModeRequired] = useState(false);
-  const largeTreeUniqueModeRequiredRef = useRef(false);
-  const largeTreeUniqueModeRootRef = useRef<ItemTreeNode | null>(null);
-  const [showLargeTreeUniqueNotice, setShowLargeTreeUniqueNotice] = useState(false);
   useEffect(() => {
-    largeTreeUniqueModeRequiredRef.current = false;
-    largeTreeUniqueModeRootRef.current = null;
-    setLargeTreeUniqueModeRequired(false);
-    setShowLargeTreeUniqueNotice(false);
     const storedPreference = loadExpandRecipesOnce();
     expandRecipesOnceRef.current = storedPreference;
     setExpandRecipesOnce(storedPreference);
@@ -1447,7 +1438,6 @@ export function GraphScreen({
         console.error('The saved graph could not be reconstructed; its snapshot was discarded.', error);
         clearGraphSession(data.descriptor);
         const cleanRoot = makeRoot(session.rootKey);
-        largeTreeUniqueModeRootRef.current = cleanRoot;
         rootRef.current = cleanRoot;
         setRoot(cleanRoot);
         needsFitRef.current = true;
@@ -2342,7 +2332,6 @@ export function GraphScreen({
   useEffect(() => {
     if (!graphRootKey) return;
     const newRoot = makeRoot(graphRootKey);
-    largeTreeUniqueModeRootRef.current = newRoot;
     rootRef.current = newRoot;
     setRoot(newRoot);
     needsFitRef.current = true;
@@ -3330,22 +3319,6 @@ export function GraphScreen({
     [applyRecipeChoice, bump, graphDirection],
   );
 
-  useEffect(() => {
-    if (
-      largeTreeUniqueModeRequiredRef.current ||
-      !root ||
-      largeTreeUniqueModeRootRef.current !== root ||
-      !shouldRequireUniqueRecipes(graph?.nodes.length ?? 0)
-    ) {
-      return;
-    }
-    largeTreeUniqueModeRequiredRef.current = true;
-    setLargeTreeUniqueModeRequired(true);
-    if (!expandRecipesOnceRef.current) {
-      updateExpandRecipesOnce(true, false);
-    }
-  }, [graph?.nodes.length, root, updateExpandRecipesOnce]);
-
   const toggleCommunityAutoExpand = useCallback(async () => {
     if (graphDirection !== 'inputs') return;
     if (communityAutoExpandLoading) {
@@ -3691,20 +3664,13 @@ export function GraphScreen({
       },
       {
         key: 'unique',
-        label: largeTreeUniqueModeRequired ? 'Unique recipes · Locked' : 'Unique recipes',
-        description: largeTreeUniqueModeRequired
-          ? 'Required while this tree is large enough to need it'
-          : 'Expand each recipe once, and mark duplicates instead of repeating them',
+        label: 'Unique recipes',
+        description:
+          'Expand each recipe once, and mark duplicates instead of repeating them',
         kind: 'toggle',
         active: expandRecipesOnce,
         metricsId: 'graph.control.expand-once',
-        onPress: () => {
-          if (largeTreeUniqueModeRequired) {
-            setShowLargeTreeUniqueNotice(true);
-            return;
-          }
-          updateExpandRecipesOnce(!expandRecipesOnce);
-        },
+        onPress: () => updateExpandRecipesOnce(!expandRecipesOnce),
       },
     );
     if (graphDirection === 'inputs' && !/^local-[a-f0-9]{16}$/u.test(data.descriptor.slug)) {
@@ -3782,7 +3748,6 @@ export function GraphScreen({
     data.descriptor.slug,
     expandRecipesOnce,
     graphDirection,
-    largeTreeUniqueModeRequired,
     onClose,
     onToggleGraphControls,
     openTreeCount,
@@ -4162,21 +4127,11 @@ export function GraphScreen({
               onPress={toggleCompactMode}
             />
             <CtrlBtn
-              label={largeTreeUniqueModeRequired ? 'Unique · Locked' : 'Unique'}
-              accessibilityLabel={
-                largeTreeUniqueModeRequired
-                  ? 'Unique recipes are required for this large tree'
-                  : 'Use unique recipes'
-              }
+              label="Unique"
+              accessibilityLabel="Use unique recipes"
               metricsId="graph.control.expand-once"
               active={expandRecipesOnce}
-              onPress={() => {
-                if (largeTreeUniqueModeRequired) {
-                  setShowLargeTreeUniqueNotice(true);
-                  return;
-                }
-                updateExpandRecipesOnce(!expandRecipesOnce);
-              }}
+              onPress={() => updateExpandRecipesOnce(!expandRecipesOnce)}
             />
             {Platform.OS === 'web' && (
               <CtrlBtn
@@ -4340,31 +4295,11 @@ export function GraphScreen({
           )}
         </View>
       )}
-      {showLargeTreeUniqueNotice && (
-        <View
-          style={[styles.uniqueModeNotice, bottomNoticeStyle, graphMenuScaleStyle]}
-          accessibilityRole="alert">
-          <Text style={[styles.uniqueModeNoticeText, noSelect]}>
-            Unique mode stays on after this tree reaches {DENSE_GRAPH_NODE_THRESHOLD} nodes. It
-            prevents duplicate recipe branches from multiplying and keeps very large trees
-            responsive. Start a new, smaller tree to change it.
-          </Text>
-          <TouchableOpacity
-            {...signalTarget('graph.control.expand-once-notice.dismiss')}
-            accessibilityRole="button"
-            accessibilityLabel="Dismiss unique mode notice"
-            style={styles.uniqueModeNoticeDismiss}
-            onPress={() => setShowLargeTreeUniqueNotice(false)}>
-            <Text style={styles.uniqueModeNoticeDismissText}>Got it</Text>
-          </TouchableOpacity>
-        </View>
-      )}
       {recipeImportNotice && (
         <View
           style={[
             styles.uniqueModeNotice,
             bottomNoticeStyle,
-            showLargeTreeUniqueNotice && styles.treeImportNoticeStacked,
             graphMenuScaleStyle,
           ]}
           accessibilityRole="alert">
