@@ -15,6 +15,8 @@ import {
 import {formatDropStat} from '../components/DropList';
 import {DisclosureChevron} from '../components/DisclosureChevron';
 import {ItemIcon, pixelated} from '../components/ItemIcon';
+import {NodeActionMenu} from './NodeActionMenu';
+import {useCatalystItems} from './catalystItems';
 import {
   RADIAL_ROOT_ITEM_ICON_SIZE,
 } from '../components/itemIconSizing';
@@ -664,6 +666,8 @@ export function GraphScreen({
 }) {
   const data = useData();
   const account = useUser();
+  // Shared with the resources tab: one list, so marking a tool in either place shows in both.
+  const {isCatalyst, setCatalyst} = useCatalystItems(data.descriptor);
   const {
     hiddenStages: hiddenRecipeStages,
     toggleStage: toggleRecipeStage,
@@ -2621,19 +2625,19 @@ export function GraphScreen({
     },
     [],
   );
-  const toggleNodeReusable = useCallback(
-    (node: ItemTreeNode) => {
+  const treatNodeAsTool = useCallback(
+    (node: ItemTreeNode, isTool: boolean) => {
+      // The list the item is shown on is the user's word about the item, so it is recorded whatever
+      // the node's place in the tree -- the root has no parent recipe to override.
+      setCatalyst(node, isTool);
       const parent = parentRecipeSource(rootRef.current, node);
       const ref = parent?.kind === 'recipe' ? parent.ref : undefined;
       if (!parent || parent.direction !== 'inputs' || !ref) {
-        console.warn('A manual retention override was requested outside a recipe input.', {
-          nodeId: node.id,
-          itemKey: node.key,
-        });
         setNodeMenu(null);
+        bump();
         return;
       }
-      const reusable = node.nonConsumed !== true;
+      const reusable = isTool;
       const overrideKey = manualRetentionOverrideKey(ref, node.key);
       const next = {
         ...manualRetentionOverridesRef.current,
@@ -2663,10 +2667,10 @@ export function GraphScreen({
         reusable,
       ).catch(error => {
         console.error('The manual recipe retention report could not be recorded.', error);
-        setExportMessage('Reusable override saved locally; its report could not be sent.');
+        setExportMessage('The tool override was saved locally; its report could not be sent.');
       });
     },
-    [bump, data],
+    [bump, data, setCatalyst],
   );
   const treeTotals = useMemo(() => {
     if (!root || graphDirection === 'outputs') {
@@ -3628,6 +3632,31 @@ export function GraphScreen({
   const onResourceTap = useCallback((total: TreeTotal) => {
     resourceTapHandlerRef.current(total);
   }, []);
+  // Held in refs so the published identity is stable: these change with the tree, and a new function
+  // on every edit would re-render every row in the resources list for a one-row change.
+  const changeRecipeRef = useRef((node: ItemTreeNode) => {
+    openPickerWithErrorHandling(node, treeTotals.byproductCoverageByNode.get(node.id));
+  });
+  changeRecipeRef.current = node => {
+    if (node.id === 'root') {
+      openRootPicker('inputs');
+      return;
+    }
+    openPickerWithErrorHandling(node, treeTotals.byproductCoverageByNode.get(node.id));
+  };
+  const onChangeRecipe = useCallback((node: ItemTreeNode) => {
+    changeRecipeRef.current(node);
+  }, []);
+  const selectAlternativeRef = useRef(selectNodeAlternative);
+  selectAlternativeRef.current = selectNodeAlternative;
+  const onSelectAlternative = useCallback((node: ItemTreeNode, selectedKey: string) => {
+    selectAlternativeRef.current(node, selectedKey);
+  }, []);
+  const treatAsToolRef = useRef(treatNodeAsTool);
+  treatAsToolRef.current = treatNodeAsTool;
+  const onTreatAsTool = useCallback((node: ItemTreeNode, isTool: boolean) => {
+    treatAsToolRef.current(node, isTool);
+  }, []);
   useEffect(() => {
     if (!isActive || !graphRootKey) return undefined;
     publishGraphTotals({
@@ -3639,6 +3668,9 @@ export function GraphScreen({
       version,
       visibleNodeIds: focusVisibleNodeIds,
       onToggleNode: onItemTap,
+      onSelectAlternative,
+      onChangeRecipe,
+      onTreatAsTool,
       useByproducts,
       onUseByproductsChange: updateUseByproducts,
       onResourceTap,
@@ -3653,8 +3685,11 @@ export function GraphScreen({
     focusVisibleNodeIds,
     graphRootKey,
     isActive,
+    onChangeRecipe,
     onItemTap,
     onResourceTap,
+    onSelectAlternative,
+    onTreatAsTool,
     pickerLookup,
     publishGraphTotals,
     root,
@@ -4226,13 +4261,6 @@ export function GraphScreen({
   const nodeMenuHasRememberedSource = nodeMenu
     ? !!preferredSourceFor(nodeMenu.node.key, nodeMenu.node.alternatives)
     : false;
-  const nodeMenuParentSource = nodeMenu
-    ? parentRecipeSource(root, nodeMenu.node)
-    : null;
-  const nodeMenuCanToggleReusable =
-    nodeMenuParentSource?.kind === 'recipe' &&
-    nodeMenuParentSource.direction === 'inputs' &&
-    nodeMenuParentSource.ref !== undefined;
   const nodeMenuPlacement = nodeMenu
     ? nodeContextMenuPlacement(
         nodeMenu.anchor,
@@ -4888,11 +4916,10 @@ export function GraphScreen({
           rootControlsShown={showRootActions}
           onFocusBranch={() => focusBranch(nodeMenu.node)}
           isFocused={focusNodeId === nodeMenu.node.id}
-          onToggleReusable={
-            nodeMenuCanToggleReusable
-              ? () => toggleNodeReusable(nodeMenu.node)
-              : undefined
-          }
+          treatAsTool={{
+            isTool: isCatalyst(nodeMenu.node),
+            onPress: () => treatNodeAsTool(nodeMenu.node, !isCatalyst(nodeMenu.node)),
+          }}
         />
       )}
       {treeShareModal}
@@ -5269,287 +5296,6 @@ const LowDetailNodeView = React.memo(function LowDetailNodeView({
   );
 });
 
-function ContextAmountStepper({
-  amount,
-  onAmountChange,
-}: {
-  amount: number;
-  onAmountChange: (amount: number) => void;
-}) {
-  const [amountText, setAmountText] = useState(String(amount));
-  useEffect(() => setAmountText(String(amount)), [amount]);
-  const updateAmountText = (value: string) => {
-    setAmountText(value);
-    const parsed = Number(value);
-    if (Number.isFinite(parsed) && parsed >= 1) onAmountChange(parsed);
-  };
-  return (
-    <View style={styles.nodeActionAmountSection}>
-      <Text style={styles.nodeActionSectionLabel}>Requested amount</Text>
-      <View style={styles.nodeActionAmountStepper}>
-        <TouchableOpacity
-          {...signalTarget('graph.node-menu.amount.decrease')}
-          accessibilityRole="button"
-          accessibilityLabel="Decrease requested amount"
-          style={styles.nodeActionAmountButton}
-          onPress={() => onAmountChange(amount - 1)}>
-          <Text style={styles.nodeActionAmountButtonText}>−</Text>
-        </TouchableOpacity>
-        <TextInput
-          accessibilityLabel="Amount requested"
-          style={styles.nodeActionAmountInput}
-          value={amountText}
-          onChangeText={updateAmountText}
-          onBlur={() => setAmountText(String(amount))}
-          keyboardType="number-pad"
-          inputMode="numeric"
-          selectTextOnFocus
-        />
-        <TouchableOpacity
-          {...signalTarget('graph.node-menu.amount.increase')}
-          accessibilityRole="button"
-          accessibilityLabel="Increase requested amount"
-          style={[styles.nodeActionAmountButton, styles.nodeActionAmountButtonPrimary]}
-          onPress={() => onAmountChange(amount + 1)}>
-          <Text
-            style={[
-              styles.nodeActionAmountButtonText,
-              styles.nodeActionAmountButtonPrimaryText,
-            ]}>
-            +
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
-
-function NodeActionMenu({
-  node,
-  interfaceZoom,
-  placement,
-  canSetRecipe,
-  hasRememberedSource,
-  amount,
-  onClose,
-  onSelectAlternative,
-  onSetOrChangeRecipe,
-  onAddUsedBy,
-  onAmountChange,
-  onUnsetRecipe,
-  onCollapseRecipe,
-  onToggleRootControls,
-  rootControlsShown,
-  onFocusBranch,
-  isFocused,
-  onToggleReusable,
-}: {
-  node: ItemTreeNode;
-  interfaceZoom: number;
-  placement: NodeContextMenuPlacement;
-  canSetRecipe: boolean;
-  hasRememberedSource: boolean;
-  amount?: number;
-  onClose: () => void;
-  onSelectAlternative: (selectedKey: string) => void;
-  onSetOrChangeRecipe: () => void;
-  onAddUsedBy?: () => void;
-  onAmountChange?: (amount: number) => void;
-  onUnsetRecipe: () => void;
-  onCollapseRecipe: () => void;
-  /** Root only: the amount stepper and pickers attached to the node itself. */
-  onToggleRootControls?: () => void;
-  rootControlsShown: boolean;
-  onFocusBranch: () => void;
-  /** Focusing the node that is already focused is how the user gets the whole tree back. */
-  isFocused: boolean;
-  onToggleReusable?: () => void;
-}) {
-  const data = useData();
-  const alternatives = Array.from(
-    new Map(
-      (node.alternatives ?? []).map(itemKey => {
-        const item = data.itemsByKey.get(itemKey);
-        const identity = item
-          ? `${item.t ?? 'item'}\u0000${item.id}\u0000${item.n}`
-          : itemKey;
-        return [identity, itemKey] as const;
-      }),
-    ).values(),
-  );
-  const hasSelectedRecipe = !!node.source || !!node.deferredRecipeExpansion;
-  const isRoot = node.id === 'root';
-  const stateLabel = node.deferredRecipeExpansion
-    ? 'Recipe expanded elsewhere'
-    : node.source
-      ? 'Recipe expanded'
-      : canSetRecipe
-        ? 'No recipe selected'
-        : 'No recipe available';
-  const menuScaleStyle =
-    Platform.OS === 'web' ? ({zoom: interfaceZoom} as unknown as object) : null;
-  return (
-    <View style={styles.nodeActionLayer} pointerEvents="box-none">
-      <Pressable
-        style={styles.nodeActionDismiss}
-        accessibilityLabel="Close node menu"
-        onPress={onClose}
-      />
-      <View
-        pointerEvents="box-none"
-        style={[
-          styles.nodeActionAnchor,
-          {left: placement.left, top: placement.top},
-        ]}>
-        <Pressable
-          accessibilityRole="menu"
-          accessibilityLabel={`${data.itemsByKey.get(node.key)?.n ?? node.key} node menu`}
-          style={[
-            styles.nodeActionCard,
-            {width: placement.width, maxHeight: placement.maxHeight},
-            menuScaleStyle,
-          ]}
-          onPointerDown={event => event.stopPropagation()}
-          onTouchStart={event => event.stopPropagation()}
-          onPress={event => event.stopPropagation()}>
-          <View style={styles.nodeActionHeader}>
-            <ItemIcon itemKey={node.key} size={32} />
-            <View style={styles.nodeActionHeaderCopy}>
-              <Text style={styles.nodeActionTitle} numberOfLines={1}>
-                {data.itemsByKey.get(node.key)?.n ?? node.key}
-              </Text>
-              <Text style={styles.nodeActionHint}>
-                {isRoot ? `Starting node · ${stateLabel}` : stateLabel}
-              </Text>
-            </View>
-          </View>
-          {amount !== undefined && onAmountChange && (
-            <ContextAmountStepper amount={amount} onAmountChange={onAmountChange} />
-          )}
-          {alternatives.length > 1 && (
-            <View style={styles.nodeAlternativeSection}>
-              <Text style={styles.nodeActionSectionLabel}>
-                {node.tag ? `#${node.tag}` : 'Ingredient alternatives'}
-              </Text>
-              <ScrollView style={styles.nodeAlternativeScroll}>
-                {alternatives.map(itemKey => (
-                  <TouchableOpacity
-                    key={itemKey}
-                    accessibilityRole="button"
-                    accessibilityState={{selected: itemKey === node.key}}
-                    style={[
-                      styles.nodeAlternativeRow,
-                      itemKey === node.key && styles.nodeAlternativeRowSelected,
-                    ]}
-                    onPress={() => onSelectAlternative(itemKey)}>
-                    <ItemIcon itemKey={itemKey} size={32} />
-                    <Text style={styles.nodeAlternativeName} numberOfLines={2}>
-                      {data.itemsByKey.get(itemKey)?.n ?? itemKey}
-                    </Text>
-                    {itemKey === node.key && (
-                      <Text style={styles.nodeAlternativeSelected}>✓</Text>
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          )}
-          <View style={styles.nodeActionButtons}>
-            {canSetRecipe && (
-              <TouchableOpacity
-                {...signalTarget('graph.node-menu.set-recipe')}
-                accessibilityRole="button"
-                style={[styles.nodeActionButton, styles.nodeActionButtonPrimary]}
-                onPress={onSetOrChangeRecipe}>
-                <Text style={styles.nodeActionButtonPrimaryText}>
-                  {hasSelectedRecipe ? 'Change recipe' : 'Set recipe'}
-                </Text>
-                <Text style={styles.nodeActionButtonPrimaryHint}>
-                  {hasSelectedRecipe ? 'Choose a different source' : 'Choose how to make this item'}
-                </Text>
-              </TouchableOpacity>
-            )}
-            {onAddUsedBy && (
-              <TouchableOpacity
-                {...signalTarget('graph.node-menu.add-used-by')}
-                accessibilityRole="button"
-                style={styles.nodeActionButton}
-                onPress={onAddUsedBy}>
-                <Text style={styles.nodeActionButtonText}>Add used by</Text>
-                <Text style={styles.nodeActionButtonHint}>Add a recipe that consumes the starting item</Text>
-              </TouchableOpacity>
-            )}
-            {onToggleReusable && (
-              <TouchableOpacity
-                {...signalTarget('graph.node-menu.toggle-reusable')}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  node.nonConsumed ? 'Treat recipe ingredient as consumed' : 'Treat recipe ingredient as reusable'
-                }
-                style={styles.nodeActionButton}
-                onPress={onToggleReusable}>
-                <Text style={styles.nodeActionButtonText}>
-                  {node.nonConsumed ? 'Treat as consumed' : 'Treat as reusable'}
-                </Text>
-                <Text style={styles.nodeActionButtonHint}>
-                  Manual override for this recipe input
-                </Text>
-              </TouchableOpacity>
-            )}
-            {onToggleRootControls && (
-              <TouchableOpacity
-                {...signalTarget('graph.node-menu.root-controls')}
-                accessibilityRole="button"
-                style={styles.nodeActionButton}
-                onPress={onToggleRootControls}>
-                <Text style={styles.nodeActionButtonText}>
-                  {rootControlsShown ? 'Hide root controls' : 'Show root controls'}
-                </Text>
-                <Text style={styles.nodeActionButtonHint}>
-                  The amount and recipe controls attached to the root node
-                </Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity
-              {...signalTarget('graph.node-menu.focus-branch')}
-              accessibilityRole="button"
-              style={styles.nodeActionButton}
-              onPress={onFocusBranch}>
-              <Text style={styles.nodeActionButtonText}>
-                {isFocused ? 'Show whole tree' : 'Focus this branch'}
-              </Text>
-              <Text style={styles.nodeActionButtonHint}>
-                {isFocused
-                  ? 'Bring back the branches hidden by this focus'
-                  : 'Hide every branch except this one and what it needs'}
-              </Text>
-            </TouchableOpacity>
-            {hasSelectedRecipe && (
-              <TouchableOpacity
-                {...signalTarget('graph.node-menu.collapse-recipe')}
-                accessibilityRole="button"
-                style={styles.nodeActionButton}
-                onPress={onCollapseRecipe}>
-                <Text style={styles.nodeActionButtonText}>Collapse recipe</Text>
-                <Text style={styles.nodeActionButtonHint}>Keep the remembered source</Text>
-              </TouchableOpacity>
-            )}
-            {(hasSelectedRecipe || hasRememberedSource) && (
-              <TouchableOpacity
-                {...signalTarget('graph.node-menu.unset-recipe')}
-                accessibilityRole="button"
-                style={[styles.nodeActionButton, styles.nodeActionButtonDanger]}
-                onPress={onUnsetRecipe}>
-                <Text style={styles.nodeActionButtonDangerText}>Unset recipe</Text>
-                <Text style={styles.nodeActionButtonHint}>Clear this node and its remembered source</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
 
 /**
  * Memoized: panning sets a new transform on every frame, which re-renders the graph, and without
@@ -6297,106 +6043,11 @@ const styles = StyleSheet.create({
     borderWidth: 4,
     opacity: 1,
   },
-  nodeActionLayer: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    zIndex: 90,
-  },
-  nodeActionDismiss: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-  },
-  nodeActionAnchor: {position: 'absolute', zIndex: 91},
-  nodeActionCard: {
-    padding: 10,
-    gap: 9,
-    borderWidth: 1,
-    borderColor: theme.borderLight,
-    borderRadius: 9,
-    backgroundColor: theme.panel,
-    shadowColor: '#000',
-    shadowOpacity: 0.38,
-    shadowRadius: 16,
-    shadowOffset: {width: 0, height: 8},
-    elevation: 20,
-    overflow: 'hidden',
-  },
-  nodeActionHeader: {flexDirection: 'row', alignItems: 'center', gap: 10},
-  nodeActionHeaderCopy: {flex: 1},
-  nodeActionTitle: {color: theme.text, fontSize: 14, fontWeight: '700'},
-  nodeActionHint: {color: theme.textDim, fontSize: 11, marginTop: 2},
-  nodeActionAmountSection: {gap: 6},
-  nodeActionAmountStepper: {flexDirection: 'row', alignItems: 'center'},
-  nodeActionAmountButton: {
-    width: 38,
-    height: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: theme.border,
-    backgroundColor: theme.panelAlt,
-  },
-  nodeActionAmountButtonPrimary: {
-    borderColor: theme.accent,
-    backgroundColor: theme.accent,
-  },
-  nodeActionAmountButtonText: {color: theme.text, fontSize: 18, fontWeight: '800'},
-  nodeActionAmountButtonPrimaryText: {color: '#0b1610'},
-  nodeActionAmountInput: {
-    flex: 1,
-    height: 34,
-    paddingHorizontal: 8,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: theme.border,
-    color: theme.text,
-    backgroundColor: '#0f141b',
-    fontSize: 13,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  nodeAlternativeSection: {gap: 7, minHeight: 0, flexShrink: 1},
   nodeActionSectionLabel: {
     color: theme.accent,
     fontSize: 11,
     fontWeight: '700',
   },
-  nodeAlternativeScroll: {maxHeight: 220},
-  nodeAlternativeRow: {
-    minHeight: 46,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-    borderRadius: 8,
-  },
-  nodeAlternativeRowSelected: {backgroundColor: theme.panelAlt},
-  nodeAlternativeName: {flex: 1, color: theme.text, fontSize: 13},
-  nodeAlternativeSelected: {color: theme.accent, fontSize: 16, fontWeight: '800'},
-  nodeActionButtons: {gap: 5},
-  nodeActionButton: {
-    minHeight: 44,
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    borderWidth: 1,
-    borderColor: theme.border,
-    borderRadius: 8,
-    backgroundColor: theme.panelAlt,
-  },
-  nodeActionButtonPrimary: {borderColor: theme.accent, backgroundColor: '#173724'},
-  nodeActionButtonDanger: {borderColor: theme.warn},
-  nodeActionButtonText: {color: theme.text, fontSize: 13, fontWeight: '700'},
-  nodeActionButtonHint: {color: theme.textDim, fontSize: 10, marginTop: 2},
-  nodeActionButtonPrimaryText: {color: theme.accent, fontSize: 13, fontWeight: '800'},
-  nodeActionButtonPrimaryHint: {color: theme.text, fontSize: 10, marginTop: 2},
-  nodeActionButtonDangerText: {color: theme.warn, fontSize: 13, fontWeight: '700'},
   edge: {position: 'absolute', backgroundColor: theme.borderLight},
   byproductSupplyEdge: {
     position: 'absolute',

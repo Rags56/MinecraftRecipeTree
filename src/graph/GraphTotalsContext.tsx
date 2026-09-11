@@ -23,6 +23,14 @@ export interface GraphTotalsSnapshot {
   visibleNodeIds?: ReadonlySet<string>;
   /** Folds a node here and in the tree at once: there is one collapse, not two. */
   onToggleNode(node: ItemTreeNode): void;
+  /**
+   * The tree's own actions, so the resources list acts through the graph rather than keeping a
+   * second implementation of anything: choosing a recipe, swapping which member of a logical
+   * ingredient slot is wanted, and saying an item is a tool rather than a material.
+   */
+  onSelectAlternative(node: ItemTreeNode, selectedKey: string): void;
+  onChangeRecipe(node: ItemTreeNode): void;
+  onTreatAsTool(node: ItemTreeNode, isTool: boolean): void;
   /** One preference shared with the tree, not a second copy of it. */
   useByproducts: boolean;
   onUseByproductsChange(value: boolean): void;
@@ -59,6 +67,9 @@ export function GraphTotalsProvider({children}: {children: React.ReactNode}) {
         current.version === next.version &&
         current.visibleNodeIds === next.visibleNodeIds &&
         current.onToggleNode === next.onToggleNode &&
+        current.onSelectAlternative === next.onSelectAlternative &&
+        current.onChangeRecipe === next.onChangeRecipe &&
+        current.onTreatAsTool === next.onTreatAsTool &&
         current.useByproducts === next.useByproducts &&
         current.onUseByproductsChange === next.onUseByproductsChange &&
         current.onResourceTap === next.onResourceTap &&

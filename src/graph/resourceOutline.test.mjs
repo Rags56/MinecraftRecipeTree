@@ -328,11 +328,10 @@ test('the two lists are a filter over one tree, not a second classification', ()
   assert.match(screen, /\['consumed', 'Items'\]/u);
   assert.match(screen, /\['catalyst', 'Catalysts & tools'\]/u);
   assert.match(screen, /filterOutlineRows\(outline, listKind, catalysts\)/u);
-  assert.match(screen, /Treat as tool\/catalyst/u);
-  assert.match(screen, /Treat as resource/u);
-  // The list an item is on is the user's own choice, saved as its own thing. It must not be the
-  // tree's retention override: that changes what the recipe consumes, and the amounts with it.
-  assert.match(screen, /persistCatalystItems\(data\.descriptor, next\)/u);
+  // The list an item is on is the user's own choice, and the wording is the same in both menus.
+  const menu = readFileSync(new URL('./NodeActionMenu.tsx', import.meta.url), 'utf8');
+  assert.match(menu, /Treat as tool\/catalyst/u);
+  assert.match(menu, /Treat as resource/u);
   assert.doesNotMatch(screen, /onToggleReusable/u);
   // And the cascade is scoped to the list, so ticking a section in one does not strike off the other.
   assert.match(screen, /kind: listKind,\s*catalysts,/u);

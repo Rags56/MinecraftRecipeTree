@@ -1,3 +1,4 @@
+import {useCallback, useEffect, useState} from 'react';
 import type {DatasetDescriptor} from '../data/datasetCatalog';
 import {treeTotalIdentity} from './treeTotals.ts';
 
@@ -71,4 +72,64 @@ export function withCatalystItem(
   if (isCatalyst) next.add(identity);
   else next.delete(identity);
   return next;
+}
+
+/**
+ * The tree and the resources list both read and write this, so they cannot disagree about what the
+ * user has called a tool. Storage alone is not enough for that: two screens that each loaded the
+ * list once would each keep their own copy, and a change in one would not show in the other until
+ * something remounted. So writes go through here and every reader is told.
+ */
+const listeners = new Set<() => void>();
+
+function notify(): void {
+  for (const listener of [...listeners]) listener();
+}
+
+export function subscribeCatalystItems(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+export function setCatalystItem(
+  descriptor: Pick<DatasetDescriptor, 'slug' | 'publicationId'>,
+  identity: string,
+  isCatalyst: boolean,
+): ReadonlySet<string> {
+  const next = withCatalystItem(loadCatalystItems(descriptor), identity, isCatalyst);
+  persistCatalystItems(descriptor, next);
+  notify();
+  return next;
+}
+
+/** The live list for a pack, and the one way to change it. */
+export function useCatalystItems(
+  descriptor: Pick<DatasetDescriptor, 'slug' | 'publicationId'>,
+): {
+  catalysts: ReadonlySet<string>;
+  isCatalyst: (item: {key: string; tag?: string; variantCount?: number}) => boolean;
+  setCatalyst: (item: {key: string; tag?: string; variantCount?: number}, isCatalyst: boolean) => void;
+} {
+  const key = catalystItemsKey(descriptor);
+  const [catalysts, setCatalysts] = useState<ReadonlySet<string>>(() =>
+    loadCatalystItems(descriptor),
+  );
+  useEffect(() => {
+    setCatalysts(loadCatalystItems(descriptor));
+    return subscribeCatalystItems(() => setCatalysts(loadCatalystItems(descriptor)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the key is the descriptor's identity.
+  }, [key]);
+  const isCatalyst = useCallback(
+    (item: {key: string; tag?: string; variantCount?: number}) =>
+      catalysts.has(catalystItemIdentity(item)),
+    [catalysts],
+  );
+  const setCatalyst = useCallback(
+    (item: {key: string; tag?: string; variantCount?: number}, isCatalystNext: boolean) => {
+      setCatalysts(setCatalystItem(descriptor, catalystItemIdentity(item), isCatalystNext));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the key is the descriptor's identity.
+    [key],
+  );
+  return {catalysts, isCatalyst, setCatalyst};
 }

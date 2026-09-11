@@ -106,21 +106,41 @@ test('the row menu opens on the gestures the tree uses', () => {
     row.slice(0, row.indexOf('{...contextMenuProps}')),
     /<TouchableOpacity/u,
   );
-  // And long press on a phone, the same delay as a node's menu on the canvas.
-  assert.match(row, /onLongPress=\{\(\) => \{/u);
+  // And long press on a phone, the same delay as a node's menu on the canvas. Both gestures carry
+  // where they happened, so the menu opens beside the row rather than in the middle of the screen.
+  assert.match(row, /onLongPress=\{event => \{/u);
   assert.match(row, /delayLongPress=\{450\}/u);
+  assert.match(row, /onMenu\(row, \{x: touch\.pageX, y: touch\.pageY\}\)/u);
+  assert.match(row, /onMenu\(row, \{x: event\.clientX \?\? 0, y: event\.clientY \?\? 0\}\)/u);
 });
 
-test('moving an item between lists does not touch the tree', () => {
+test('the tree and the list share one idea of what a tool is', () => {
   const screen = readFileSync(
     new URL('../components/ResourcesScreen.tsx', import.meta.url),
     'utf8',
   );
-  const context = readFileSync(new URL('./GraphTotalsContext.tsx', import.meta.url), 'utf8');
-  // The first attempt wrote the tree's retention override, which changes what a recipe consumes and
-  // moves the amounts with it. The two lists are only a filter on the list, so the choice lives on
-  // its own and the snapshot no longer carries a way to change the tree at all.
-  assert.doesNotMatch(screen, /onToggleReusable/u);
-  assert.doesNotMatch(context, /onToggleReusable/u);
-  assert.match(screen, /withCatalystItem\(/u);
+  const graph = readFileSync(new URL('./GraphScreen.tsx', import.meta.url), 'utf8');
+  // Both screens read the live list through the same store, so a tool marked in one is a tool in the
+  // other at once -- two loaded copies would each keep their own and drift apart.
+  assert.match(screen, /useCatalystItems\(data\.descriptor\)/u);
+  assert.match(graph, /useCatalystItems\(data\.descriptor\)/u);
+  // And the resources list acts through the graph rather than keeping its own version of the action.
+  assert.match(screen, /onTreatAsTool\(menuNode, !isCatalyst\(menuNode\)\)/u);
+  assert.doesNotMatch(screen, /persistCatalystItems|withCatalystItem/u);
+});
+
+test('the same menu opens in both places, with the canvas actions left out', () => {
+  const screen = readFileSync(
+    new URL('../components/ResourcesScreen.tsx', import.meta.url),
+    'utf8',
+  );
+  const graph = readFileSync(new URL('./GraphScreen.tsx', import.meta.url), 'utf8');
+  // One component: the alternatives, the recipe and the tool action are written once and look the
+  // same wherever they are opened from.
+  assert.match(screen, /<NodeActionMenu/u);
+  assert.match(graph, /<NodeActionMenu/u);
+  assert.match(screen, /onSelectAlternative=\{selectedKey =>/u);
+  assert.match(screen, /onChangeRecipe\(menuNode\)/u);
+  // The list has nothing to focus or lay out, so it passes no branch focus or root controls.
+  assert.doesNotMatch(screen, /onFocusBranch|onToggleRootControls/u);
 });

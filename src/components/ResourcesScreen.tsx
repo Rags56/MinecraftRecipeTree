@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import React, {useCallback, useContext, useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -7,25 +7,25 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
-import {Modal} from '../ui/nativeUiScale';
+import {InterfaceScaleContext, Modal} from '../ui/nativeUiScale';
 import {signalTarget} from '../analytics/signal';
 import {useData} from '../data/DataContext';
 import {displayIngredientName} from '../data/ingredientTags';
 import {formatIngredientQuantity} from '../data/ingredientQuantities';
 import {useGraphTotals} from '../graph/GraphTotalsContext';
+import {useCatalystItems} from '../graph/catalystItems';
+import {NodeActionMenu} from '../graph/NodeActionMenu';
 import {
-  catalystItemsKey,
-  loadCatalystItems,
-  persistCatalystItems,
-  withCatalystItem,
-} from '../graph/catalystItems';
+  nodeContextMenuPlacement,
+  type NodeContextAnchor,
+} from '../graph/nodeContextMenu';
 import {findTreeNodeById} from '../graph/treeFocus';
 import {
   filterOutlineRows,
   gatherableNodeIdsUnder,
-  outlineRowIdentity,
   resourceOutlineRows,
   type ResourceOutlineKind,
   type ResourceOutlineRow,
@@ -66,14 +66,12 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
   }, [progressKey]);
 
   const [listKind, setListKind] = useState<ResourceOutlineKind>('consumed');
-  // Which items the user has moved to the tools list. Nothing arrives there on its own: a pack
-  // saying a recipe keeps an item describes the craft, not how someone wants to shop for it.
-  const [catalysts, setCatalysts] = useState<ReadonlySet<string>>(new Set());
-  const catalystsKey = catalystItemsKey(data.descriptor);
-  useEffect(() => {
-    setCatalysts(loadCatalystItems(data.descriptor));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the key is the descriptor's identity.
-  }, [catalystsKey]);
+  // Which items the user has moved to the tools list, shared with the tree so the two cannot
+  // disagree. Nothing arrives there on its own: a pack saying a recipe keeps an item describes the
+  // craft, not how someone wants to shop for it.
+  const {catalysts, isCatalyst} = useCatalystItems(data.descriptor);
+  const window = useWindowDimensions();
+  const interfaceScale = useContext(InterfaceScaleContext);
   const outline = useMemo(
     () =>
       snapshot
@@ -202,24 +200,27 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
   // guess at.
   const completedRef = useRef(completed);
   completedRef.current = completed;
-  const [menuRow, setMenuRow] = useState<ResourceOutlineRow | null>(null);
-  const openRowMenu = useCallback((row: ResourceOutlineRow) => setMenuRow(row), []);
-  const menuRowIsCatalyst =
-    menuRow !== null && catalysts.has(outlineRowIdentity(menuRow));
-  const setRowKind = useCallback(() => {
-    const row = menuRow;
-    setMenuRow(null);
-    if (!row) return;
-    // Which list the item is shown on, and nothing else: the tree's own idea of what the recipe
-    // consumes is left alone, so amounts, byproducts and the graph do not move.
-    const next = withCatalystItem(
-      catalysts,
-      outlineRowIdentity(row),
-      !catalysts.has(outlineRowIdentity(row)),
-    );
-    setCatalysts(next);
-    persistCatalystItems(data.descriptor, next);
-  }, [catalysts, data.descriptor, menuRow]);
+  const [menuRow, setMenuRow] = useState<{row: ResourceOutlineRow; anchor: NodeContextAnchor} | null>(
+    null,
+  );
+  const openRowMenu = useCallback((row: ResourceOutlineRow, anchor: NodeContextAnchor) => {
+    setMenuRow({row, anchor});
+  }, []);
+  const menuNode = menuRow ? nodeById(menuRow.row.nodeId) : null;
+  // Inside a modal the layer fills the window, so the pointer's own coordinates place the card the
+  // same way the canvas does. On a phone the modal carries the interface scale itself, so the
+  // placement works in the scaled units the card is laid out in.
+  const menuPlacement = menuRow
+    ? nodeContextMenuPlacement(
+        Platform.OS === 'web'
+          ? menuRow.anchor
+          : {x: menuRow.anchor.x / interfaceScale, y: menuRow.anchor.y / interfaceScale},
+        Platform.OS === 'web'
+          ? {width: window.width, height: window.height}
+          : {width: window.width / interfaceScale, height: window.height / interfaceScale},
+        Platform.OS === 'web' ? interfaceScale : 1,
+      )
+    : null;
   const tickRow = useCallback(
     (row: ResourceOutlineRow, done: boolean) => {
       if (!rootKey) return;
@@ -375,56 +376,39 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
           ))
         )}
       </ScrollView>
-      <Modal
-        visible={menuRow !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setMenuRow(null)}>
-        <Pressable style={styles.menuBackdrop} onPress={() => setMenuRow(null)}>
-          <Pressable style={styles.menuCard} onPress={() => {}}>
-            <Text style={styles.menuTitle} numberOfLines={2}>
-              {menuRow
-                ? displayIngredientName(
-                    data.itemsByKey.get(menuRow.key)?.n ?? menuRow.key,
-                    menuRow.tag,
-                    data.descriptor.minecraftVersion,
-                  )
-                : ''}
-            </Text>
-            <TouchableOpacity
-              {...signalTarget('resources.set-kind')}
-              accessibilityRole="button"
-              style={styles.menuAction}
-              onPress={setRowKind}>
-              <Text style={styles.menuActionText}>
-                {menuRowIsCatalyst ? 'Treat as resource' : 'Treat as tool/catalyst'}
-              </Text>
-              <Text style={styles.menuActionHint}>
-                {menuRowIsCatalyst
-                  ? 'Move it back to Items and count it with the materials'
-                  : 'Move it to Catalysts & tools, which the tree and its amounts ignore'}
-              </Text>
-            </TouchableOpacity>
-            {menuRow?.consumed === false && !menuRowIsCatalyst && (
-              // Worth knowing when deciding, and no more than that: the pack's word on how the
-              // craft behaves does not put anything on a list.
-              <Text style={styles.menuNote}>
-                This pack says the recipe keeps this rather than consuming it
-                {menuRow.retentionUses === undefined
-                  ? ''
-                  : `, for ${String(menuRow.retentionUses)} crafts`}
-                .
-              </Text>
-            )}
-            <TouchableOpacity
-              accessibilityRole="button"
-              style={styles.menuCancel}
-              onPress={() => setMenuRow(null)}>
-              <Text style={styles.menuCancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      {menuNode && menuPlacement && (
+        // The tree's own menu, not a second one: same card, same gestures, same actions where they
+        // mean the same thing. The canvas-only entries are simply not passed.
+        <Modal
+          visible
+          transparent
+          animationType="none"
+          onRequestClose={() => setMenuRow(null)}>
+          <NodeActionMenu
+            node={menuNode}
+            interfaceZoom={Platform.OS === 'web' ? interfaceScale : 1}
+            placement={menuPlacement}
+            canSetRecipe
+            onClose={() => setMenuRow(null)}
+            onSelectAlternative={selectedKey => {
+              setMenuRow(null);
+              snapshotRef.current?.onSelectAlternative(menuNode, selectedKey);
+            }}
+            onSetOrChangeRecipe={() => {
+              setMenuRow(null);
+              setPendingKey(menuNode.id);
+              snapshotRef.current?.onChangeRecipe(menuNode);
+            }}
+            treatAsTool={{
+              isTool: isCatalyst(menuNode),
+              onPress: () => {
+                setMenuRow(null);
+                snapshotRef.current?.onTreatAsTool(menuNode, !isCatalyst(menuNode));
+              },
+            }}
+          />
+        </Modal>
+      )}
     </View>
   );
 }
@@ -460,7 +444,7 @@ const OutlineRow = React.memo(function OutlineRow({
   onToggle: (nodeId: string) => void;
   onOpen: (nodeId: string) => void;
   onTick: (row: ResourceOutlineRow, done: boolean) => void;
-  onMenu: (row: ResourceOutlineRow) => void;
+  onMenu: (row: ResourceOutlineRow, anchor: NodeContextAnchor) => void;
 }) {
   const data = useData();
   const item = data.itemsByKey.get(row.key);
@@ -470,9 +454,13 @@ const OutlineRow = React.memo(function OutlineRow({
   const contextMenuProps =
     Platform.OS === 'web'
       ? ({
-          onContextMenu: (event: {preventDefault?: () => void}) => {
+          onContextMenu: (event: {
+            preventDefault?: () => void;
+            clientX?: number;
+            clientY?: number;
+          }) => {
             event.preventDefault?.();
-            onMenu(row);
+            onMenu(row, {x: event.clientX ?? 0, y: event.clientY ?? 0});
           },
         } as object)
       : {};
@@ -499,9 +487,10 @@ const OutlineRow = React.memo(function OutlineRow({
         }`}
         style={styles.rowMain}
         delayLongPress={450}
-        onLongPress={() => {
+        onLongPress={event => {
           longPressedRef.current = true;
-          onMenu(row);
+          const touch = event.nativeEvent;
+          onMenu(row, {x: touch.pageX, y: touch.pageY});
         }}
         onPress={() => {
           // A long press has already opened the menu; the release must not also act on the row.
@@ -623,39 +612,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   progressFill: {height: 6, borderRadius: 3, backgroundColor: theme.accent},
-  menuBackdrop: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-    backgroundColor: 'rgba(5,8,12,0.55)',
-  },
-  menuCard: {
-    width: '100%',
-    maxWidth: 380,
-    gap: 8,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.borderLight,
-    backgroundColor: theme.panel,
-  },
-  menuTitle: {color: theme.text, fontSize: 14, fontWeight: '700', marginBottom: 2},
-  menuAction: {
-    minHeight: 56,
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: theme.border,
-    backgroundColor: theme.panelAlt,
-  },
-  menuActionText: {color: theme.text, fontSize: 13, fontWeight: '700'},
-  menuActionHint: {color: theme.textDim, fontSize: 11, lineHeight: 15, marginTop: 2},
-  menuNote: {color: theme.textDim, fontSize: 11, lineHeight: 15, paddingHorizontal: 2},
-  menuCancel: {minHeight: 44, alignItems: 'center', justifyContent: 'center'},
-  menuCancelText: {color: theme.textDim, fontSize: 12, fontWeight: '700'},
   listTabs: {flexDirection: 'row', gap: 6, marginBottom: 10},
   listTab: {
     flexDirection: 'row',

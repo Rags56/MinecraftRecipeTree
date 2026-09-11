@@ -12,6 +12,9 @@ import {
 } from './panGesture.ts';
 
 const graphScreenSource = await readFile(new URL('./GraphScreen.tsx', import.meta.url), 'utf8');
+// The node menu is its own module: the resources list opens the same one, so it cannot live inside
+// the graph screen any more.
+const nodeMenuSource = await readFile(new URL('./NodeActionMenu.tsx', import.meta.url), 'utf8');
 const lowDetailCanvasSource = await readFile(
   new URL('./LowDetailGraphCanvas.tsx', import.meta.url),
   'utf8',
@@ -135,12 +138,15 @@ test('compact byproduct nodes support alternate recipe gestures', () => {
 
 test('node actions use an anchored state-aware menu instead of a modal', () => {
   assert.doesNotMatch(graphScreenSource, /<Modal transparent visible/u);
-  assert.match(graphScreenSource, /accessibilityRole="menu"/u);
+  assert.match(nodeMenuSource, /accessibilityRole="menu"/u);
   assert.match(graphScreenSource, /nodeContextMenuPlacement\(/u);
-  assert.match(graphScreenSource, /hasSelectedRecipe \? 'Change recipe' : 'Set recipe'/u);
-  assert.match(graphScreenSource, />Add used by<\/Text>/u);
-  assert.match(graphScreenSource, /<ContextAmountStepper amount=\{amount\}/u);
-  assert.match(graphScreenSource, /hasSelectedRecipe && \(/u);
+  assert.match(nodeMenuSource, /hasSelectedRecipe \? 'Change recipe' : 'Set recipe'/u);
+  assert.match(nodeMenuSource, />Add used by<\/Text>/u);
+  assert.match(nodeMenuSource, /<ContextAmountStepper amount=\{amount\}/u);
+  // Still state-aware: collapsing and unsetting are offered only where there is a recipe to act on,
+  // and only where the caller passed a handler for them.
+  assert.match(nodeMenuSource, /hasSelectedRecipe && onCollapseRecipe && \(/u);
+  assert.match(nodeMenuSource, /\(hasSelectedRecipe \|\| hasRememberedSource\) && onUnsetRecipe && \(/u);
 });
 
 test('compact nodes render wide item and fluid quantities when amounts are enabled', () => {
@@ -154,15 +160,15 @@ test('compact nodes render wide item and fluid quantities when amounts are enabl
 
 test('node alternative previews stay aligned to the item icon pixel grid', () => {
   assert.match(
-    graphScreenSource,
+    nodeMenuSource,
     /const alternatives = Array\.from\([\s\S]*?item\.id[\s\S]*?item\.n[\s\S]*?\.values\(\)/u,
   );
   assert.match(
-    graphScreenSource,
+    nodeMenuSource,
     /<ItemIcon itemKey=\{itemKey\} size=\{32\} \/>/u,
   );
   assert.doesNotMatch(
-    graphScreenSource,
+    nodeMenuSource,
     /<ItemIcon itemKey=\{itemKey\} size=\{28\} \/>/u,
   );
 });
