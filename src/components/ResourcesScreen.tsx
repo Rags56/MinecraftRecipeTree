@@ -18,8 +18,7 @@ import {useGraphTotals} from '../graph/GraphTotalsContext';
 import {findTreeNodeById} from '../graph/treeFocus';
 import {
   filterOutlineRows,
-  gatherableIdentitiesUnder,
-  outlineRowIdentity,
+  gatherableNodeIdsUnder,
   resourceOutlineRows,
   type ResourceOutlineKind,
   type ResourceOutlineRow,
@@ -29,7 +28,7 @@ import {
   persistCompletedResources,
   resourceProgressKey,
   countableCompleted,
-  identityCompletionPercentage,
+  gatheredPercentage,
   withResourcesCompleted,
 } from '../graph/resourceProgress';
 import type {TreeTotal} from '../graph/treeTotals';
@@ -82,7 +81,7 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
   const gatherableIn = useCallback(
     (kind: ResourceOutlineKind) =>
       snapshot?.root
-        ? gatherableIdentitiesUnder(
+        ? gatherableNodeIdsUnder(
             snapshot.root,
             snapshot.totals.byproductCoverageByNode,
             kind,
@@ -91,7 +90,7 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- version tracks in-place tree edits.
     [snapshot, snapshot?.version],
   );
-  const catalystIdentities = useMemo(() => gatherableIn('catalyst'), [gatherableIn]);
+  const catalystNodeIds = useMemo(() => gatherableIn('catalyst'), [gatherableIn]);
   const gatherable = useMemo(
     () => gatherableIn(listKind),
     [gatherableIn, listKind],
@@ -115,7 +114,7 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
   // find starts none, and a spinner keyed only on the tap would then never have anything to stop
   // it: the row span forever on the one item guaranteed never to load.
   const pendingLookupKey = lookupPending ? pendingKey : null;
-  const percentage = identityCompletionPercentage(gatherable, countable);
+  const percentage = gatheredPercentage(gatherable, countable);
 
 
   // Deliberately does not switch tabs: choosing a recipe here updates the tree in the background
@@ -142,30 +141,30 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
    * A row's tick covers everything under it: a section is ticked when its whole branch is, and
    * ticking one ticks the branch in a single write rather than a hundred.
    */
-  const identitiesFor = useCallback(
+  const nodeIdsFor = useCallback(
     (row: ResourceOutlineRow) => {
       const node = nodeById(row.nodeId);
       const coverage = snapshotRef.current?.totals.byproductCoverageByNode;
       // Scoped to the list on screen: ticking a section in Items must not strike off the tools
       // inside it, which are a different list with its own progress.
       return node
-        ? gatherableIdentitiesUnder(node, coverage, listKind)
+        ? gatherableNodeIdsUnder(node, coverage, listKind)
         : row.byproductCovered
           ? []
-          : [outlineRowIdentity(row)];
+          : [row.nodeId];
     },
     [listKind, nodeById],
   );
   const rowState = useCallback(
     (row: ResourceOutlineRow) => {
-      const identities = identitiesFor(row);
-      const ticked = identities.filter(identity => completed.has(identity)).length;
+      const nodeIds = nodeIdsFor(row);
+      const ticked = nodeIds.filter(nodeId => completed.has(nodeId)).length;
       return {
-        done: identities.length > 0 && ticked === identities.length,
-        partial: ticked > 0 && ticked < identities.length,
+        done: nodeIds.length > 0 && ticked === nodeIds.length,
+        partial: ticked > 0 && ticked < nodeIds.length,
       };
     },
-    [completed, identitiesFor],
+    [completed, nodeIdsFor],
   );
   const openRow = useCallback(
     (nodeId: string) => {
@@ -194,17 +193,17 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
   const tickRow = useCallback(
     (row: ResourceOutlineRow, done: boolean) => {
       if (!rootKey) return;
-      const next = withResourcesCompleted(completedRef.current, identitiesFor(row), !done);
+      const next = withResourcesCompleted(completedRef.current, nodeIdsFor(row), !done);
       completedRef.current = next;
       setCompleted(next);
       persistCompletedResources(data.descriptor, rootKey, next);
     },
-    [data.descriptor, identitiesFor, rootKey],
+    [data.descriptor, nodeIdsFor, rootKey],
   );
 
   const everything = useMemo(
-    () => [...gatherableIn('consumed'), ...catalystIdentities],
-    [catalystIdentities, gatherableIn],
+    () => [...gatherableIn('consumed'), ...catalystNodeIds],
+    [catalystNodeIds, gatherableIn],
   );
   if (!snapshot || everything.length === 0) {
     return (
@@ -293,8 +292,8 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
             ['catalyst', 'Catalysts & tools'],
           ] as const
         ).map(([kind, label]) => {
-          const identities = kind === 'catalyst' ? catalystIdentities : gatherableIn('consumed');
-          const ticked = identities.filter(identity => completed.has(identity)).length;
+          const nodeIds = kind === 'catalyst' ? catalystNodeIds : gatherableIn('consumed');
+          const ticked = nodeIds.filter(nodeId => completed.has(nodeId)).length;
           const selected = listKind === kind;
           return (
             <TouchableOpacity
@@ -309,7 +308,7 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
               </Text>
               {/* Each list carries its own count, so neither kind of work hides the other. */}
               <Text style={[styles.listTabCount, selected && styles.listTabCountSelected]}>
-                {identities.length === 0 ? 'none' : `${ticked}/${identities.length}`}
+                {nodeIds.length === 0 ? 'none' : `${ticked}/${nodeIds.length}`}
               </Text>
             </TouchableOpacity>
           );

@@ -1,5 +1,5 @@
 import type {ItemTreeNode} from './model';
-import {treeTotalIdentity, type NodeByproductCoverage} from './treeTotals.ts';
+import type {NodeByproductCoverage} from './treeTotals.ts';
 
 /**
  * The resources list as the shape of the tree rather than one flat total. An item whose recipe is
@@ -120,37 +120,32 @@ export function outlineResourceRows(
   return rows.filter(row => !row.expanded);
 }
 
-/** The same logical identity the checklist and the totals use, from an outline row. */
-export function outlineRowIdentity(row: ResourceOutlineRow): string {
-  return treeTotalIdentity({key: row.key, tag: row.tag, variants: row.variants});
-}
-
 /**
  * Every gatherable item beneath a node: the ends of its branch, which are the things a person
  * actually collects. It follows a folded subtree as well as an open one, so ticking a section that
  * is currently put away still ticks what it holds rather than silently nothing.
+ *
+ * Identified by node rather than by item, because two recipes wanting the same thing are two
+ * separate jobs. A ring block and a chevron block that each need eighty hieroglyphs need a hundred
+ * and sixty between them, and gathering the ring block's eighty does not gather the chevron's --
+ * keyed by item, one tick would have struck off both and the list would have read half done. The
+ * flat totals still add them together, which is the right answer to a different question.
  */
-export function gatherableIdentitiesUnder(
+export function gatherableNodeIdsUnder(
   node: ItemTreeNode,
   byproductCoverageByNode?: ReadonlyMap<string, NodeByproductCoverage>,
   kind?: ResourceOutlineKind,
 ): string[] {
   const wanted = (current: ItemTreeNode) =>
     kind === undefined || (current.nonConsumed !== true) === (kind === 'consumed');
-  const identityOf = (current: ItemTreeNode) =>
-    treeTotalIdentity({
-      key: current.key,
-      tag: current.tag,
-      variants: current.variantCount ?? 1,
-    });
-  const identities = new Set<string>();
+  const nodeIds: string[] = [];
   const visit = (current: ItemTreeNode) => {
     const source = current.source ?? current.collapsedSource;
     if (!source) {
       // Covered by a byproduct is not something to go and get, so turning byproducts on moves the
       // count as well as the amounts.
       if (!isByproductCovered(byproductCoverageByNode?.get(current.id)) && wanted(current)) {
-        identities.add(identityOf(current));
+        nodeIds.push(current.id);
       }
       return;
     }
@@ -161,10 +156,10 @@ export function gatherableIdentitiesUnder(
   if (!source) {
     return isByproductCovered(byproductCoverageByNode?.get(node.id)) || !wanted(node)
       ? []
-      : [identityOf(node)];
+      : [node.id];
   }
   for (const child of source.inputs) visit(child);
-  return [...identities];
+  return nodeIds;
 }
 
 /**

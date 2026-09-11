@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {
   filterOutlineRows,
-  gatherableIdentitiesUnder,
+  gatherableNodeIdsUnder,
   isOutlineBranch,
   outlineRowKind,
   outlineResourceRows,
@@ -137,8 +137,11 @@ test('a focused branch narrows the list the graph is already narrowed to', () =>
 test('a section covers every gatherable thing beneath it', () => {
   const {root, casing} = tree();
   // The ends of the branch, not the steps: casing itself is made, plate and rod are collected.
-  assert.deepEqual(gatherableIdentitiesUnder(casing).sort(), ['plate', 'rod']);
-  assert.deepEqual(gatherableIdentitiesUnder(root).sort(), ['core', 'plate', 'rod']);
+  assert.deepEqual(gatherableNodeIdsUnder(casing).sort(), ['casing.s.0', 'casing.s.1']);
+  assert.deepEqual(
+    gatherableNodeIdsUnder(root).sort(),
+    ['casing.s.0', 'casing.s.1', 'root.s.1'],
+  );
 });
 
 test('ticking a folded section still covers what it holds', () => {
@@ -146,19 +149,34 @@ test('ticking a folded section still covers what it holds', () => {
   casing.collapsedSource = casing.source;
   casing.source = undefined;
   // Its contents are out of the list but not out of the build, so they still tick.
-  assert.deepEqual(gatherableIdentitiesUnder(casing).sort(), ['plate', 'rod']);
+  assert.deepEqual(gatherableNodeIdsUnder(casing).sort(), ['casing.s.0', 'casing.s.1']);
 });
 
 test('a resource covers itself', () => {
-  assert.deepEqual(gatherableIdentitiesUnder(node('c', 'core')), ['core']);
+  assert.deepEqual(gatherableNodeIdsUnder(node('c', 'core')), ['c']);
 });
 
-test('a tag requirement keeps its own identity through a cascade', () => {
-  const anyIngot = node('a', 'iron_ingot', {tag: 'forge:ingots/iron', variantCount: 6});
-  const exact = node('b', 'iron_ingot');
+test('two places wanting the same item are two separate errands', () => {
+  // The reported bug: a ring block and a chevron block each need eighty hieroglyphs, which is a
+  // hundred and sixty between them. Keyed by item, one tick struck off both.
+  const forRing = node('ring.s.0', 'hieroglyph', {amount: 80});
+  const forChevron = node('chevron.s.0', 'hieroglyph', {amount: 80});
+  const ring = node('root.s.0', 'ring_block', {source: recipe('ring', [forRing])});
+  const chevron = node('root.s.1', 'chevron_block', {source: recipe('chevron', [forChevron])});
+  const root = node('root', 'stargate', {source: recipe('root', [ring, chevron])});
+
+  assert.deepEqual(gatherableNodeIdsUnder(root).sort(), ['chevron.s.0', 'ring.s.0']);
+  // Ticking the ring block covers its own eighty and nothing else.
+  assert.deepEqual(gatherableNodeIdsUnder(ring), ['ring.s.0']);
+  assert.deepEqual(gatherableNodeIdsUnder(chevron), ['chevron.s.0']);
+});
+
+test('a tag requirement and an exact one stay apart', () => {
+  const anyIngot = node('p.s.0', 'iron_ingot', {tag: 'forge:ingots/iron', variantCount: 6});
+  const exact = node('p.s.1', 'iron_ingot');
   const parent = node('p', 'p', {source: recipe('p', [anyIngot, exact])});
   // Both are beneath the same section, and ticking it must not merge two different requirements.
-  assert.deepEqual(gatherableIdentitiesUnder(parent).sort(), ['#forge:ingots/iron', 'iron_ingot']);
+  assert.deepEqual(gatherableNodeIdsUnder(parent).sort(), ['p.s.0', 'p.s.1']);
 });
 
 test('turning byproducts on recalculates the list, not just the setting', () => {
@@ -173,14 +191,17 @@ test('turning byproducts on recalculates the list, not just the setting', () => 
   const off = resourceOutlineRows(root);
   assert.equal(off.find(r => r.key === 'plate').byproductCovered, false);
   assert.equal(off.find(r => r.key === 'plate').byproductCredited, 0);
-  assert.deepEqual(gatherableIdentitiesUnder(root).sort(), ['core', 'plate', 'rod']);
+  assert.deepEqual(
+    gatherableNodeIdsUnder(root).sort(),
+    ['casing.s.0', 'casing.s.1', 'root.s.1'],
+  );
 
   const on = resourceOutlineRows(root, {byproductCoverageByNode: covered});
   assert.equal(on.find(r => r.key === 'plate').byproductCovered, true);
   assert.equal(on.find(r => r.key === 'plate').byproductCredited, 8);
   // Nothing to gather for a covered row, so the count and the percentage move with it.
-  assert.deepEqual(gatherableIdentitiesUnder(root, covered).sort(), ['core', 'rod']);
-  assert.deepEqual(gatherableIdentitiesUnder(casing, covered), ['rod']);
+  assert.deepEqual(gatherableNodeIdsUnder(root, covered).sort(), ['casing.s.1', 'root.s.1']);
+  assert.deepEqual(gatherableNodeIdsUnder(casing, covered), ['casing.s.1']);
 });
 
 test('a partly covered row keeps its requirement and states the credit', () => {
@@ -194,7 +215,7 @@ test('a partly covered row keeps its requirement and states the credit', () => {
   assert.equal(row.byproductCredited, 3);
   assert.equal(row.byproductCovered, false);
   // Still something to go and get, since a byproduct only covered part of it.
-  assert.ok(gatherableIdentitiesUnder(root, partial).includes('plate'));
+  assert.ok(gatherableNodeIdsUnder(root, partial).includes('casing.s.0'));
 });
 
 test('separates what is consumed from what is kept', () => {
@@ -231,11 +252,11 @@ test('a tick cascades only within the list it was tapped in', () => {
   const plate = node('c.s.1', 'plate');
   const casing = node('root.s.0', 'casing', {source: recipe('c', [hammer, plate])});
   const root = node('root', 'stargate', {source: recipe('root', [casing])});
-  assert.deepEqual(gatherableIdentitiesUnder(casing, undefined, 'consumed'), ['plate']);
-  assert.deepEqual(gatherableIdentitiesUnder(casing, undefined, 'catalyst'), ['hammer']);
+  assert.deepEqual(gatherableNodeIdsUnder(casing, undefined, 'consumed'), ['c.s.1']);
+  assert.deepEqual(gatherableNodeIdsUnder(casing, undefined, 'catalyst'), ['c.s.0']);
   // Unscoped still covers the whole branch, which is what the progress total uses.
-  assert.deepEqual(gatherableIdentitiesUnder(casing).sort(), ['hammer', 'plate']);
-  assert.deepEqual(gatherableIdentitiesUnder(root, undefined, 'catalyst'), ['hammer']);
+  assert.deepEqual(gatherableNodeIdsUnder(casing).sort(), ['c.s.0', 'c.s.1']);
+  assert.deepEqual(gatherableNodeIdsUnder(root, undefined, 'catalyst'), ['c.s.0']);
 });
 
 test('the two lists are a filter over one tree, not a second classification', () => {
@@ -254,5 +275,5 @@ test('the two lists are a filter over one tree, not a second classification', ()
   assert.match(screen, /Set as catalyst/u);
   assert.match(screen, /Set as resource/u);
   // And the cascade is scoped to the list, so ticking a section in one does not strike off the other.
-  assert.match(screen, /gatherableIdentitiesUnder\(node, coverage, listKind\)/u);
+  assert.match(screen, /gatherableNodeIdsUnder\(node, coverage, listKind\)/u);
 });
