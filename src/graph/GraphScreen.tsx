@@ -2586,7 +2586,13 @@ export function GraphScreen({
         byproductCoverageByNode: new Map(),
       } as TreeCalculation;
     }
-    const totals = calculateTreeTotals(root, useByproducts, {
+    // A collapsed branch keeps its subtree, so folding one away is a view change rather than a
+    // decision to gather that item directly. It matters most at the root, which is the thing being
+    // built rather than an ingredient: counting a collapsed root as an input replaced the entire
+    // checklist with a single line asking for the item the user is trying to make.
+    const rootForTotals =
+      !root.source && root.collapsedSource ? {...root, source: root.collapsedSource} : root;
+    const totals = calculateTreeTotals(rootForTotals, useByproducts, {
       resolveDeferredRecipeSource: expandRecipesOnce
         ? createDeferredRecipeSourceResolver(root, graphDirection)
         : undefined,

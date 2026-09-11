@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {
   DEFAULT_USE_BYPRODUCTS,
@@ -505,4 +506,43 @@ test('calculates a 10,000-node dependency chain without recursive call-stack gro
       tag: undefined,
     },
   ]);
+});
+
+test('a collapsed root asks for its materials, not for the item being built', () => {
+  const subtree = {
+    id: 'root.s',
+    kind: 'recipe',
+    ref: [0, 0],
+    direction: 'inputs',
+    recipe: {out: [[['item|stargate', 1]]]},
+    inputs: [
+      {id: 'root.s.0', key: 'item|iron', amount: 4, ancestors: ['item|stargate']},
+      {id: 'root.s.1', key: 'item|gold', amount: 2, ancestors: ['item|stargate']},
+    ],
+  };
+
+  // Collapsed, with nothing read through: the checklist becomes the goal item itself, which is
+  // not something anyone can go and gather.
+  const collapsed = {id: 'root', key: 'item|stargate', ancestors: [], collapsedSource: subtree};
+  assert.deepEqual(
+    calculateTreeTotals(collapsed).inputs.map(total => total.key),
+    ['item|stargate'],
+  );
+
+  // Read through the subtree a collapse now keeps, the materials survive folding the tree away.
+  const readThrough = {...collapsed, source: collapsed.collapsedSource};
+  assert.deepEqual(
+    calculateTreeTotals(readThrough).inputs.map(total => total.key).sort(),
+    ['item|gold', 'item|iron'],
+  );
+});
+
+test('the graph reads totals through a collapsed root', () => {
+  const source = readFileSync(new URL('./GraphScreen.tsx', import.meta.url), 'utf8');
+  assert.match(
+    source,
+    /const rootForTotals =\s*!root\.source && root\.collapsedSource \? \{\.\.\.root, source: root\.collapsedSource\} : root;/u,
+  );
+  // Only the root: collapsing an ingredient is still a way to say it will be acquired directly.
+  assert.match(source, /calculateTreeTotals\(rootForTotals, useByproducts/u);
 });
