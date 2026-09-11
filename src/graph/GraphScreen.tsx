@@ -435,6 +435,7 @@ const noSelect = Platform.OS === 'web' ? ({userSelect: 'none'} as unknown as obj
 const COMPACT_MODE_KEY = 'graphCompactMode';
 const RADIAL_LAYOUT_KEY = 'graphRadialLayout';
 const LEGACY_PACKED_LAYOUT_KEY = 'graphPackedLayout';
+const LOW_DETAIL_KEY = 'graphLowDetail';
 const USE_BYPRODUCTS_KEY = 'graphUseByproducts';
 /** Distance from the canvas top to the controls bar; panels below it clear it by measurement. */
 const CONTROLS_TOP_INSET = 10;
@@ -453,7 +454,6 @@ const FIT_CONTROL_SIZE = Platform.OS === 'web' ? 40 : 44;
  */
 const BOTTOM_NOTICE_LEFT_INSET = CANVAS_EDGE_INSET + FIT_CONTROL_SIZE + 12;
 const EXPAND_RECIPES_ONCE_KEY = 'graphExpandRecipesOnce';
-const FOCUS_MODE_KEY = 'graphFocusMode';
 const MAX_RECIPE_PICKER_CHOICES = 40;
 const RECIPE_PICKER_GROUP_PAGE = 40;
 const GRAPH_EXPORT_PADDING = 48;
@@ -556,16 +556,16 @@ function loadRadialLayout(): boolean {
 }
 
 /**
- * A phone shows so little of a large tree that narrowing to one branch is most of what makes it
- * readable, so focusing stays directly available there. A desktop canvas already shows the tree,
- * so focus is something the user turns on rather than something offered on every node.
+ * Far-zoom trees drop to flat chips so a dense graph stays interactive. A phone needs that to
+ * survive a large pack at all, so it stays automatic there. A desktop has the headroom to keep
+ * drawing real nodes, and the chips are a downgrade it should be asked for rather than given.
  */
-function loadFocusMode(): boolean {
+function loadLowDetailMode(): boolean {
   if (Platform.OS !== 'web') return true;
   try {
-    return globalThis.localStorage?.getItem(FOCUS_MODE_KEY) === '1';
+    return globalThis.localStorage?.getItem(LOW_DETAIL_KEY) === '1';
   } catch (error) {
-    console.error('Focus mode preference could not be loaded from localStorage.', error);
+    console.error('Low-detail preference could not be loaded from localStorage.', error);
     return false;
   }
 }
@@ -738,7 +738,7 @@ export function GraphScreen({
   const [controlsHeight, setControlsHeight] = useState(0);
   const [showMoreControls, setShowMoreControls] = useState(false);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
-  const [focusModeEnabled, setFocusModeEnabled] = useState(loadFocusMode);
+  const [lowDetailEnabled, setLowDetailEnabled] = useState(loadLowDetailMode);
   const [useByproducts, setUseByproducts] = useState(loadUseByproducts);
   const [expandRecipesOnce, setExpandRecipesOnce] = useState(loadExpandRecipesOnce);
   const expandRecipesOnceRef = useRef(expandRecipesOnce);
@@ -2427,9 +2427,9 @@ export function GraphScreen({
   // Recomputed against `version` so a focus survives the branch under it being expanded, and
   // resolves to null the moment its node stops existing rather than blanking the canvas.
   const focus = useMemo(
-    () => (focusModeEnabled ? treeFocus(root, focusNodeId) : null),
+    () => treeFocus(root, focusNodeId),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- version tracks in-place tree edits.
-    [root, focusModeEnabled, focusNodeId, version],
+    [root, focusNodeId, version],
   );
   const focusVisibleNodeIds = focus?.visibleNodeIds;
   const focusLabel = useMemo(() => {
@@ -2617,7 +2617,9 @@ export function GraphScreen({
     [graph, treeTotals],
   );
   const lowDetailGraph =
-    !exportingTree && shouldUseLowDetailGraph(transform.scale, graph?.nodes.length ?? 0);
+    lowDetailEnabled &&
+    !exportingTree &&
+    shouldUseLowDetailGraph(transform.scale, graph?.nodes.length ?? 0);
   const rasterLowDetailGraph = Platform.OS === 'web' && lowDetailGraph;
   const renderedGraph = useMemo(() => {
     if (!graph) return null;
@@ -3231,21 +3233,17 @@ export function GraphScreen({
     });
   }, [applyTransform]);
 
-  const toggleFocusMode = useCallback(() => {
-    setFocusModeEnabled(current => {
+  const toggleLowDetail = useCallback(() => {
+    setLowDetailEnabled(current => {
       const next = !current;
-      // Turning the mode off restores the whole tree rather than leaving a focus nothing can
-      // reach, since the chip and the node action both disappear with it.
-      if (!next) setFocusNodeId(null);
-      needsFitRef.current = true;
       try {
         const storage = globalThis.localStorage;
-        if (storage) storage.setItem(FOCUS_MODE_KEY, next ? '1' : '0');
+        if (storage) storage.setItem(LOW_DETAIL_KEY, next ? '1' : '0');
         else if (Platform.OS === 'web') {
-          console.warn('Focus mode is using memory only because localStorage is unavailable.');
+          console.warn('Low-detail mode is using memory only because localStorage is unavailable.');
         }
       } catch (error) {
-        console.error('Focus mode preference could not be saved to localStorage.', error);
+        console.error('Low-detail preference could not be saved to localStorage.', error);
       }
       return next;
     });
@@ -4174,15 +4172,15 @@ export function GraphScreen({
             />
             {Platform.OS === 'web' && (
               <CtrlBtn
-                label="Focus"
+                label="Fast zoom"
                 accessibilityLabel={
-                  focusModeEnabled
-                    ? 'Turn off focusing a single branch'
-                    : 'Focus a single branch at a time'
+                  lowDetailEnabled
+                    ? 'Draw full detail when zoomed out'
+                    : 'Draw zoomed-out trees as flat chips so they stay interactive'
                 }
-                metricsId="graph.control.focus-mode"
-                active={focusModeEnabled}
-                onPress={toggleFocusMode}
+                metricsId="graph.control.low-detail"
+                active={lowDetailEnabled}
+                onPress={toggleLowDetail}
               />
             )}
             {/* Everything past this point is an action rather than a view toggle, and none of it
@@ -4707,7 +4705,6 @@ export function GraphScreen({
           rootControlsShown={showRootActions}
           onFocusBranch={() => focusBranch(nodeMenu.node)}
           isFocused={focusNodeId === nodeMenu.node.id}
-          canFocusBranch={focusModeEnabled}
           onToggleReusable={
             nodeMenuCanToggleReusable
               ? () => toggleNodeReusable(nodeMenu.node)
@@ -5162,7 +5159,6 @@ function NodeActionMenu({
   rootControlsShown,
   onFocusBranch,
   isFocused,
-  canFocusBranch,
   onToggleReusable,
 }: {
   node: ItemTreeNode;
@@ -5184,8 +5180,6 @@ function NodeActionMenu({
   onFocusBranch: () => void;
   /** Focusing the node that is already focused is how the user gets the whole tree back. */
   isFocused: boolean;
-  /** Off on desktop until the user turns focus mode on; a phone always offers it. */
-  canFocusBranch: boolean;
   onToggleReusable?: () => void;
 }) {
   const data = useData();
@@ -5333,7 +5327,6 @@ function NodeActionMenu({
                 </Text>
               </TouchableOpacity>
             )}
-            {canFocusBranch && (
             <TouchableOpacity
               {...signalTarget('graph.node-menu.focus-branch')}
               accessibilityRole="button"
@@ -5348,7 +5341,6 @@ function NodeActionMenu({
                   : 'Hide every branch except this one and what it needs'}
               </Text>
             </TouchableOpacity>
-            )}
             {hasSelectedRecipe && (
               <TouchableOpacity
                 {...signalTarget('graph.node-menu.collapse-recipe')}

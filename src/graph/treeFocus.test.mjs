@@ -87,21 +87,20 @@ test('a focused layout draws only children on the focused branch', () => {
   assert.deepEqual(visibleInputs(item('leaf', 'leaf'), focus.visibleNodeIds), []);
 });
 
-test('desktop opts into focus while a phone always offers it', () => {
-  // The default is platform-dependent rather than a stored preference, so it is asserted from
-  // the source: a desktop canvas already shows the tree, a phone canvas does not.
+test('focusing a branch is offered on every platform, behind no preference', () => {
   const source = readFileSync(new URL('./GraphScreen.tsx', import.meta.url), 'utf8');
-  const loader = source.slice(source.indexOf('function loadFocusMode'));
+  // Focus is always available; what a desktop opts into is the flat far-zoom rendering instead.
+  assert.doesNotMatch(source, /focusModeEnabled|FOCUS_MODE_KEY/u);
+  assert.match(source, /Platform\.OS === 'web' && \(\s*<CtrlBtn\s*label="Fast zoom"/u);
+  const loader = source.slice(source.indexOf('function loadLowDetailMode'));
   assert.match(loader.slice(0, 200), /if \(Platform\.OS !== 'web'\) return true;/u);
-  assert.match(loader.slice(0, 400), /getItem\(FOCUS_MODE_KEY\) === '1'/u);
-  // The toggle is a desktop affordance; a phone reaches focus from the node menu instead.
-  assert.match(source, /Platform\.OS === 'web' && \(\s*<CtrlBtn\s*label="Focus"/u);
+  assert.match(loader.slice(0, 400), /getItem\(LOW_DETAIL_KEY\) === '1'/u);
 });
 
-test('turning focus mode off cannot strand an unreachable focus', () => {
+test('the far-zoom rendering a desktop opts into is the only thing that preference gates', () => {
   const source = readFileSync(new URL('./GraphScreen.tsx', import.meta.url), 'utf8');
-  const toggle = source.slice(source.indexOf('const toggleFocusMode'));
-  assert.match(toggle.slice(0, 400), /if \(!next\) setFocusNodeId\(null\);/u);
+  // With it off a desktop keeps drawing real nodes however far out the tree is zoomed.
+  assert.match(source, /lowDetailEnabled &&\s*!exportingTree &&\s*shouldUseLowDetailGraph\(/u);
 });
 
 test('a phone reaches the graph options through an overlay, not a bar on the canvas', () => {
