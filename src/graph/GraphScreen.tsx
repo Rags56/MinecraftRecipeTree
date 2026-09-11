@@ -874,6 +874,32 @@ export function GraphScreen({
     transformRef.current = next;
     setTransform(next);
   }, []);
+  /**
+   * Pointer and touch move events arrive far faster than the screen refreshes -- a high-polling
+   * mouse reports hundreds of times a second, and a finger is not much kinder -- and rendering the
+   * graph once per event meant most of those renders were thrown away before anything was drawn.
+   * Gesture updates are coalesced to one render per frame; everything else still applies at once,
+   * since a tap or a fit is a single change the user is waiting on.
+   */
+  const pendingTransformRef = useRef<GraphTransform | null>(null);
+  const transformFrameRef = useRef(0);
+  const scheduleTransform = useCallback((next: GraphTransform) => {
+    transformRef.current = next;
+    pendingTransformRef.current = next;
+    if (transformFrameRef.current !== 0) return;
+    transformFrameRef.current = requestAnimationFrame(() => {
+      transformFrameRef.current = 0;
+      const pending = pendingTransformRef.current;
+      pendingTransformRef.current = null;
+      if (pending) setTransform(pending);
+    });
+  }, []);
+  useEffect(
+    () => () => {
+      if (transformFrameRef.current !== 0) cancelAnimationFrame(transformFrameRef.current);
+    },
+    [],
+  );
   const viewportRef = useRef({w: 0, h: 0});
   const [viewportSize, setViewportSize] = useState({w: 0, h: 0});
   const needsFitRef = useRef(false);
@@ -3283,16 +3309,18 @@ export function GraphScreen({
     [minimapVisible],
   );
 
+  // Wheel and pinch both arrive as a stream rather than as single events, so they coalesce the
+  // same way a drag does.
   const zoomAt = useCallback((px: number, py: number, factor: number) => {
     const current = transformRef.current;
     const scale = Math.min(4, Math.max(0.12, current.scale * factor));
     const k = scale / current.scale;
-    applyTransform({
+    scheduleTransform({
       x: px - (px - current.x) * k,
       y: py - (py - current.y) * k,
       scale,
     });
-  }, [applyTransform]);
+  }, [scheduleTransform]);
 
   const toggleLowDetail = useCallback(() => {
     setLowDetailEnabled(current => {
@@ -3692,7 +3720,7 @@ export function GraphScreen({
             console.error('Graph pan received movement without a gesture origin.');
             return;
           }
-          applyTransform(transformForPanGesture(panOrigin.current, g.dx, g.dy));
+          scheduleTransform(transformForPanGesture(panOrigin.current, g.dx, g.dy));
         },
         onPanResponderTerminationRequest: () => false,
         onPanResponderRelease: () => {

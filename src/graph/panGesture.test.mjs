@@ -229,3 +229,21 @@ test('panning does not re-render every visible node', () => {
   const nodeMarkup = renderBlock.slice(0, renderBlock.indexOf('</View>'));
   assert.doesNotMatch(nodeMarkup, /on(Tap|Collapse|Swap|Info|Actions)=\{\(?\w*\)? ?=>/u);
 });
+
+test('gesture updates are coalesced to one render per frame', () => {
+  // Pointer and touch moves arrive far faster than the screen refreshes -- a high-polling mouse
+  // reports hundreds of times a second -- so rendering per event threw most of that work away
+  // before anything was drawn, and stuttered on trees small enough to rule out their size.
+  assert.match(graphScreenSource, /const scheduleTransform = useCallback\(/u);
+  assert.match(graphScreenSource, /transformFrameRef\.current = requestAnimationFrame\(/u);
+  assert.match(
+    graphScreenSource,
+    /scheduleTransform\(transformForPanGesture\(panOrigin\.current, g\.dx, g\.dy\)\)/u,
+  );
+  // Zoom arrives as a stream too, from both the wheel and a pinch.
+  assert.match(graphScreenSource, /scheduleTransform\(\{\s*x: px - \(px - current\.x\) \* k/u);
+  // A discrete change still applies at once: fit and recentre are single actions being waited on.
+  assert.match(graphScreenSource, /applyTransform\(transformCenteredOn\(/u);
+  // The frame must be released, or an unmount mid-gesture leaves it pointing at a dead setState.
+  assert.match(graphScreenSource, /cancelAnimationFrame\(transformFrameRef\.current\)/u);
+});
