@@ -23,6 +23,7 @@ import {
   ITEM_ICON_LOAD_TIMEOUT_MS,
   ITEM_ICON_SPINNER_DELAY_MS,
   itemIconRetryDelayMs,
+  type ItemIconFailureReason,
   itemIconSpinnerScale,
   shouldRetryItemIconLoad,
 } from './itemIconLoading';
@@ -95,7 +96,9 @@ function UriItemIcon({
   const [slow, setSlow] = useState(false);
   const reportedFailure = useRef(false);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const failRef = useRef<((detail: unknown) => void) | null>(null);
+  const failRef = useRef<
+    ((detail: unknown, reason?: ItemIconFailureReason) => void) | null
+  >(null);
   useEffect(
     () => () => {
       if (retryTimer.current !== null) clearTimeout(retryTimer.current);
@@ -107,7 +110,7 @@ function UriItemIcon({
     const spinnerTimer = setTimeout(() => setSlow(true), ITEM_ICON_SPINNER_DELAY_MS);
     // A hung request never reports anything at all, so nothing but a timer can end this attempt.
     const timeoutTimer = setTimeout(
-      () => failRef.current?.('The image load timed out without a response.'),
+      () => failRef.current?.('The image load timed out without a response.', 'timeout'),
       ITEM_ICON_LOAD_TIMEOUT_MS,
     );
     return () => {
@@ -115,9 +118,9 @@ function UriItemIcon({
       clearTimeout(timeoutTimer);
     };
   }, [attempt, loaded]);
-  const failAttempt = (detail: unknown) => {
+  const failAttempt = (detail: unknown, reason: ItemIconFailureReason = 'error') => {
     const attemptsMade = attempt + 1;
-    if (shouldRetryItemIconLoad(attemptsMade)) {
+    if (shouldRetryItemIconLoad(attemptsMade, reason)) {
       retryTimer.current = setTimeout(() => {
         retryTimer.current = null;
         setAttempt(attemptsMade);

@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {
   ITEM_ICON_LOAD_TIMEOUT_MS,
+  MAX_ITEM_ICON_TIMEOUT_ATTEMPTS,
   ITEM_ICON_SPINNER_DELAY_MS,
   MAX_ITEM_ICON_LOAD_ATTEMPTS,
   itemIconRetryDelayMs,
@@ -80,4 +81,30 @@ test('retries by remounting rather than by changing the content-addressed URI', 
   // cache-busting query would silently drop these requests out of the local pack cache.
   assert.match(itemIconSource, /key=\{attempt\}/u);
   assert.doesNotMatch(itemIconSource, /uri=\{`\$\{uri\}[?&]/u);
+});
+
+test('a load that never answers is given far more patience than one that fails', () => {
+  // A freshly opened app starts every visible icon at once; the ones queued behind that flood
+  // answer late, and treating late as broken is what leaves a screen of letter avatars behind.
+  assert.ok(MAX_ITEM_ICON_TIMEOUT_ATTEMPTS > MAX_ITEM_ICON_LOAD_ATTEMPTS);
+  assert.equal(shouldRetryItemIconLoad(MAX_ITEM_ICON_LOAD_ATTEMPTS, 'timeout'), true);
+  assert.equal(shouldRetryItemIconLoad(MAX_ITEM_ICON_LOAD_ATTEMPTS, 'error'), false);
+  // An error is the platform saying this will not work, and still gives up.
+  assert.equal(shouldRetryItemIconLoad(MAX_ITEM_ICON_TIMEOUT_ATTEMPTS, 'timeout'), false);
+  // Unspecified means an error, which is the stricter of the two.
+  assert.equal(shouldRetryItemIconLoad(MAX_ITEM_ICON_LOAD_ATTEMPTS), false);
+});
+
+test('backoff stops doubling so a patient retry never becomes an abandoned one', () => {
+  const late = itemIconRetryDelayMs(MAX_ITEM_ICON_TIMEOUT_ATTEMPTS - 1, () => 0);
+  assert.ok(late <= 20_000, `backoff grew to ${late}ms`);
+  // Still growing where it matters, rather than flat from the start.
+  assert.ok(itemIconRetryDelayMs(4, () => 0) > itemIconRetryDelayMs(2, () => 0));
+});
+
+test('a timed-out attempt is reported as a timeout, not as an error', () => {
+  // The file already reads its own source above; the distinction only matters if it reaches
+  // shouldRetryItemIconLoad, which is where the two budgets diverge.
+  assert.match(itemIconSource, /timed out without a response\.', 'timeout'\)/u);
+  assert.match(itemIconSource, /shouldRetryItemIconLoad\(attemptsMade, reason\)/u);
 });

@@ -7,12 +7,29 @@
  * keeps the eventual fallback meaningful without giving up on the first stumble.
  */
 export const MAX_ITEM_ICON_LOAD_ATTEMPTS = 4;
+/**
+ * A load that never answers gets far more patience than one that fails. An error is the platform
+ * saying this will not work; silence usually means the request is queued behind the flood every
+ * other icon started at the same moment, which is exactly what a freshly opened app produces --
+ * and giving up on that lands the permanent letter avatar this retry exists to prevent.
+ */
+export const MAX_ITEM_ICON_TIMEOUT_ATTEMPTS = 10;
 const ITEM_ICON_RETRY_BASE_DELAY_MS = 400;
 /** Hundreds of icons can fail together, so spread their retries instead of retrying in lockstep. */
 const ITEM_ICON_RETRY_JITTER_MS = 250;
+/** Backoff stops doubling here, so a patient retry never becomes an abandoned one. */
+const ITEM_ICON_RETRY_MAX_DELAY_MS = 20_000;
 
-export function shouldRetryItemIconLoad(attemptsMade: number): boolean {
-  return attemptsMade < MAX_ITEM_ICON_LOAD_ATTEMPTS;
+export type ItemIconFailureReason = 'error' | 'timeout';
+
+export function shouldRetryItemIconLoad(
+  attemptsMade: number,
+  reason: ItemIconFailureReason = 'error',
+): boolean {
+  return (
+    attemptsMade <
+    (reason === 'timeout' ? MAX_ITEM_ICON_TIMEOUT_ATTEMPTS : MAX_ITEM_ICON_LOAD_ATTEMPTS)
+  );
 }
 
 /** Exponential backoff with jitter, in the same shape the pack loader's own retries would use. */
@@ -24,7 +41,11 @@ export function itemIconRetryDelayMs(
     throw new Error(`Item icon retry delay requires a positive attempt count, got ${attemptsMade}.`);
   }
   const jitter = Math.floor(random() * ITEM_ICON_RETRY_JITTER_MS);
-  return ITEM_ICON_RETRY_BASE_DELAY_MS * 2 ** (attemptsMade - 1) + jitter;
+  const backoff = Math.min(
+    ITEM_ICON_RETRY_MAX_DELAY_MS,
+    ITEM_ICON_RETRY_BASE_DELAY_MS * 2 ** (attemptsMade - 1),
+  );
+  return backoff + jitter;
 }
 
 /**
