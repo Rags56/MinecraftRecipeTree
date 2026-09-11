@@ -42,6 +42,22 @@ publications, immutable preview sets, and legacy modpack verification. It must s
 authorization and refuse feedback, administration, and mutation requests. This lets a private beta
 exercise production-shaped data without sharing production bindings or accepting writes.
 
+### Local testing against public data
+
+`vite dev` sets the same variable for the local Worker, so a development server reads real packs.
+A built Worker served by `wrangler dev` does not, and on web the client asks its own origin for the
+catalog -- a local D1 holds no published dataset, so that request answers 503 and the app offers no
+modpacks at all. Build with `npm run build:local` (`MRT_LOCAL_DATA_ORIGIN=true`) to give the built
+Worker the same read-only origin:
+
+```sh
+npm run build:local
+npx wrangler dev --config dist/server/wrangler.json --port 8790
+```
+
+The flag is ignored when `MRT_DEPLOY_TARGET` selects beta or production, which have datasets of
+their own. Use the ordinary `npm run build` when testing the local database itself.
+
 ## Release workflow
 
 1. Reconcile the latest `main` application changes into `beta` while retaining the beta project ID

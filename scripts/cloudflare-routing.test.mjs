@@ -38,8 +38,15 @@ test('Cloudflare routes catalog, immutable datasets, and administration through 
   );
   assert.match(
     viteConfig,
-    /:\s*isLocalDev\s*\?\s*\{vars:\s*\{BETA_DATA_ORIGIN\}\}\s*:\s*\{\}/,
+    /:\s*isLocalDev \|\| isLocalDataOrigin\s*\?\s*\{vars:\s*\{BETA_DATA_ORIGIN\}\}\s*:\s*\{\}/,
     'local development should reuse the public production dataset catalog without changing deployment bindings',
+  );
+  // A dist/ build served by `wrangler dev` has no dataset of its own, so it may ask for the same
+  // public read origin -- but only on purpose, and never as a side effect of a release build.
+  assert.match(
+    viteConfig,
+    /const isLocalDataOrigin =\s*process\.env\.MRT_LOCAL_DATA_ORIGIN === ['"]true['"] && !isCloudflareBeta && !isCloudflareProduction/,
+    'the local read origin must be opt-in and impossible to combine with a beta or production build',
   );
   assert.match(
     viteConfig,

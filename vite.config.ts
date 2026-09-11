@@ -7,6 +7,15 @@ import {SUPABASE_PROJECT_URL} from './src/account/supabaseConfig';
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === 'seatbelt';
 const isCloudflareBeta = process.env.MRT_DEPLOY_TARGET === 'cloudflare-beta';
 const isCloudflareProduction = process.env.MRT_DEPLOY_TARGET === 'cloudflare-production';
+/**
+ * A dist/ build served by `wrangler dev`. On web the client reads its catalog from its own origin,
+ * and a local Worker's D1 holds no published dataset, so that request answers 503 and the app has
+ * no modpacks at all -- `vite dev` avoids this by proxying public reads to production, but a built
+ * Worker had no way to ask for the same thing. Opt-in, and never for a beta or production build:
+ * those have their own data and must not have a read origin bolted on.
+ */
+const isLocalDataOrigin =
+  process.env.MRT_LOCAL_DATA_ORIGIN === 'true' && !isCloudflareBeta && !isCloudflareProduction;
 const BETA_DATA_ORIGIN = 'https://minecraftrecipetree.craftsmannsoftware.com';
 const SUPABASE_URL = SUPABASE_PROJECT_URL;
 const BETA_CANDIDATE_DATASET_SLUG = 'gt-new-horizons';
@@ -81,7 +90,7 @@ export default defineConfig(async ({command}) => {
                     DONATION_SUPABASE_MONTHLY_CENTS,
                   },
                 }
-              : isLocalDev
+              : isLocalDev || isLocalDataOrigin
                 ? {vars: {BETA_DATA_ORIGIN}}
                 : {}),
           main: './worker/index.ts',
