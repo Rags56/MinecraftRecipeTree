@@ -193,3 +193,22 @@ test('clearing the last tree clears the checklist with it', () => {
     /if \(openGraphTrees\.length === 0\) publishGraphTotals\(null\);/u,
   );
 });
+
+test('a tap that starts no lookup leaves no spinner behind', () => {
+  const source = readFileSync(
+    new URL('../components/ResourcesScreen.tsx', import.meta.url),
+    'utf8',
+  );
+  // An item with no recipe to find starts no lookup, so a spinner keyed only on the tap would
+  // have nothing to stop it: the one row guaranteed never to load would spin forever.
+  assert.match(source, /const pendingLookupKey = lookupPending \? pendingKey : null;/u);
+  assert.match(source, /pending=\{pendingLookupKey === total\.key\}/u);
+  assert.doesNotMatch(source, /pending=\{pendingKey === total\.key\}/u);
+});
+
+test('an item with nowhere to go says so instead of looking ignored', () => {
+  const source = readFileSync(new URL('./GraphScreen.tsx', import.meta.url), 'utf8');
+  const tap = source.slice(source.indexOf('const choices = choicesFor(node.key, graphDirection'));
+  assert.match(tap.slice(0, 600), /has no recipe in this pack; it has to be gathered\./u);
+  assert.match(tap.slice(0, 600), /Nothing in this pack uses/u);
+});

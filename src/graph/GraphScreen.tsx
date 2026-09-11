@@ -2174,7 +2174,15 @@ export function GraphScreen({
         node.collapsedSource = undefined;
       }
       const choices = choicesFor(node.key, graphDirection, node.alternatives);
-      if (choices.length === 0) return;
+      if (choices.length === 0) {
+        const itemName = data.itemsByKey.get(node.key)?.n ?? node.key;
+        setExportMessage(
+          graphDirection === 'outputs'
+            ? `Nothing in this pack uses ${itemName}.`
+            : `${itemName} has no recipe in this pack; it has to be gathered.`,
+        );
+        return;
+      }
       const preferred = preferredSourceFor(node.key, node.alternatives);
       if (preferred) {
         applyChoice(node, preferred, {expansionBudget: budgetFor(node)});
@@ -2188,6 +2196,7 @@ export function GraphScreen({
       bump,
       applyChoice,
       budgetFor,
+      data.itemsByKey,
       pinNodePosition,
       openPickerWithErrorHandling,
       choicesFor,

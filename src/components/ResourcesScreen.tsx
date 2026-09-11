@@ -59,6 +59,10 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
   useEffect(() => {
     if (!lookupPending) setPendingKey(null);
   }, [lookupPending]);
+  // The spinner belongs to a lookup that is actually running. Tapping an item with no recipe to
+  // find starts none, and a spinner keyed only on the tap would then never have anything to stop
+  // it: the row span forever on the one item guaranteed never to load.
+  const pendingLookupKey = lookupPending ? pendingKey : null;
   const percentage = resourceCompletionPercentage(resources, countable);
 
   const toggle = useCallback(
@@ -156,7 +160,7 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
             )}
             iconSize={iconSize}
             done={countable.has(total.key)}
-            pending={pendingKey === total.key}
+            pending={pendingLookupKey === total.key}
             onOpen={openInTree}
             onToggle={toggle}
           />
