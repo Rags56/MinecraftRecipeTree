@@ -23,6 +23,7 @@ import {
 import {
   loadCompletedResources,
   persistCompletedResources,
+  resourceProgressKey,
   countableCompleted,
   identityCompletionPercentage,
   withResourcesCompleted,
@@ -44,9 +45,15 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
   const [completed, setCompleted] = useState<ReadonlySet<string>>(() => new Set());
 
   const rootKey = snapshot?.rootKey ?? null;
+  const progressKey = rootKey ? resourceProgressKey(data.descriptor, rootKey) : null;
   useEffect(() => {
-    setCompleted(rootKey ? loadCompletedResources(data.descriptor, rootKey) : new Set());
-  }, [data.descriptor, rootKey]);
+    setCompleted(
+      rootKey && progressKey ? loadCompletedResources(data.descriptor, rootKey) : new Set(),
+    );
+    // progressKey is the identity of the list being tracked; the descriptor object behind it is
+    // replaced on unrelated context updates and must not reload on its own.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progressKey]);
 
   const outline = useMemo(
     () =>
@@ -140,15 +147,18 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
     },
     [nodeById],
   );
+  // The tick that is in storage, so a write never depends on a state updater being called exactly
+  // once: React may invoke one speculatively or twice, and a save is not something to repeat or
+  // guess at.
+  const completedRef = useRef(completed);
+  completedRef.current = completed;
   const tickRow = useCallback(
     (row: ResourceOutlineRow, done: boolean) => {
       if (!rootKey) return;
-      const identities = identitiesFor(row);
-      setCompleted(current => {
-        const next = withResourcesCompleted(current, identities, !done);
-        persistCompletedResources(data.descriptor, rootKey, next);
-        return next;
-      });
+      const next = withResourcesCompleted(completedRef.current, identitiesFor(row), !done);
+      completedRef.current = next;
+      setCompleted(next);
+      persistCompletedResources(data.descriptor, rootKey, next);
     },
     [data.descriptor, identitiesFor, rootKey],
   );

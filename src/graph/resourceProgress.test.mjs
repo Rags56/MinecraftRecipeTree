@@ -282,3 +282,26 @@ test('the checklist measures the tree rather than the flat totals', () => {
   // totals.inputs still feeds the CSV, but nothing about progress depends on it any more.
   assert.doesNotMatch(screen, /totals\.inputs/u);
 });
+
+test('a tick is written once, outside the state updater', () => {
+  const screen = readFileSync(
+    new URL('../components/ResourcesScreen.tsx', import.meta.url),
+    'utf8',
+  );
+  const handler = screen.slice(screen.indexOf('const tickRow = useCallback('));
+  const body = handler.slice(0, handler.indexOf('  );') + 4);
+  // React may call an updater speculatively or twice, so a save cannot live inside one.
+  assert.doesNotMatch(body, /setCompleted\(current =>/u);
+  assert.match(body, /setCompleted\(next\);\s*\n\s*persistCompletedResources\(/u);
+});
+
+test('reloading progress follows the list being tracked, not the descriptor object', () => {
+  const screen = readFileSync(
+    new URL('../components/ResourcesScreen.tsx', import.meta.url),
+    'utf8',
+  );
+  // The context hands out a new descriptor object on unrelated updates; keying the reload on it
+  // threw away in-memory ticks on each of those and read storage again behind them.
+  assert.match(screen, /const progressKey = rootKey \? resourceProgressKey\(/u);
+  assert.match(screen, /\}, \[progressKey\]\);/u);
+});
