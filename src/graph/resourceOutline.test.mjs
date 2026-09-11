@@ -339,3 +339,36 @@ test('the two lists are a filter over one tree, not a second classification', ()
   // And the cascade is scoped to the list, so ticking a section in one does not strike off the other.
   assert.match(screen, /kind: listKind,\s*catalysts,/u);
 });
+
+test('a tool holds the place the recipe gave it', () => {
+  // Amount order is how a materials list is worked through, but a tool is not a quantity: sorting it
+  // by one dropped the hammer to the bottom of a section it belongs at the top of.
+  const hammer = node('c.s.0', 'hammer', {amount: 1});
+  const plate = node('c.s.1', 'plate', {amount: 8});
+  const rod = node('c.s.2', 'rod', {amount: 64});
+  const casing = node('root.s.0', 'casing', {source: recipe('c', [hammer, plate, rod])});
+  const root = node('root', 'stargate', {source: recipe('root', [casing])});
+
+  // Unmarked it sorts with everything else, biggest first.
+  assert.deepEqual(
+    resourceOutlineRows(root).map(r => r.key),
+    ['casing', 'rod', 'plate', 'hammer'],
+  );
+  // Marked, it stays in the recipe's own first slot while the rest sort around it.
+  assert.deepEqual(
+    resourceOutlineRows(root, {catalysts: new Set(['c.s.0'])}).map(r => r.key),
+    ['casing', 'hammer', 'rod', 'plate'],
+  );
+});
+
+test('a tool in the middle of a recipe stays in the middle', () => {
+  const plate = node('c.s.0', 'plate', {amount: 8});
+  const hammer = node('c.s.1', 'hammer', {amount: 1});
+  const rod = node('c.s.2', 'rod', {amount: 64});
+  const casing = node('root.s.0', 'casing', {source: recipe('c', [plate, hammer, rod])});
+  const root = node('root', 'stargate', {source: recipe('root', [casing])});
+  assert.deepEqual(
+    resourceOutlineRows(root, {catalysts: new Set(['c.s.1'])}).map(r => r.key),
+    ['casing', 'rod', 'hammer', 'plate'],
+  );
+});

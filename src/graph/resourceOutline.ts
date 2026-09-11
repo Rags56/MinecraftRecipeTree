@@ -64,6 +64,8 @@ export interface ResourceOutlineOptions {
   byproductCoverageByNode?: ReadonlyMap<string, NodeByproductCoverage>;
   /** An active branch focus: only the nodes it allows are listed. */
   visibleNodeIds?: ReadonlySet<string>;
+  /** The places the user has called a tool, which hold their position rather than being sorted. */
+  catalysts?: CatalystItems;
 }
 
 /** Supplied entirely by something the tree already makes, so there is nothing left to gather. */
@@ -82,21 +84,31 @@ export function resourceOutlineRows(
 ): ResourceOutlineRow[] {
   if (!root) return [];
   const rows: ResourceOutlineRow[] = [];
-  const {requiredByNode, byproductCoverageByNode, visibleNodeIds} = options;
+  const {requiredByNode, byproductCoverageByNode, visibleNodeIds, catalysts} = options;
 
   const visit = (node: ItemTreeNode, depth: number) => {
     // A folded branch keeps its subtree, so it is walked for structure but never listed: its
     // contents are put away in the tree and belong put away here too.
+    const inputs = node.source?.inputs ?? [];
     // Biggest job first within each section, unknown amounts last, which is the order the list
     // is worked through -- the nesting decides the shape, this decides the order inside it.
-    const children = [...(node.source?.inputs ?? [])].sort((left, right) => {
-      const l = requiredByNode?.get(left.id) ?? left.amount ?? null;
-      const r = requiredByNode?.get(right.id) ?? right.amount ?? null;
-      if (l == null || r == null) {
-        if (l == null && r == null) return left.key.localeCompare(right.key);
-        return l == null ? 1 : -1;
-      }
-      return l !== r ? r - l : left.key.localeCompare(right.key);
+    const sorted = inputs
+      .filter(child => catalysts?.has(child.id) !== true)
+      .sort((left, right) => {
+        const l = requiredByNode?.get(left.id) ?? left.amount ?? null;
+        const r = requiredByNode?.get(right.id) ?? right.amount ?? null;
+        if (l == null || r == null) {
+          if (l == null && r == null) return left.key.localeCompare(right.key);
+          return l == null ? 1 : -1;
+        }
+        return l !== r ? r - l : left.key.localeCompare(right.key);
+      });
+    // A tool holds the place the recipe gave it. It is not a quantity to work through, so ordering
+    // it by one buried it at the end of a section it belongs at the top of -- the one thing you
+    // have to have before any of the rest is worth gathering.
+    const children = sorted;
+    inputs.forEach((child, index) => {
+      if (catalysts?.has(child.id) === true) children.splice(index, 0, child);
     });
     for (const child of children) {
       if (visibleNodeIds && !visibleNodeIds.has(child.id)) continue;

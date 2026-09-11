@@ -79,11 +79,12 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
             requiredByNode: snapshot.totals.requiredByNode,
             byproductCoverageByNode: snapshot.totals.byproductCoverageByNode,
             visibleNodeIds: snapshot.visibleNodeIds,
+            catalysts,
           })
         : [],
     // version: the tree is edited in place, so its identity alone does not change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [snapshot, snapshot?.version],
+    [catalysts, snapshot, snapshot?.version],
   );
   const rows = useMemo(
     () => filterOutlineRows(outline, listKind, catalysts),
