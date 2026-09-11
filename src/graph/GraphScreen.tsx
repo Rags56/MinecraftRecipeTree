@@ -165,6 +165,7 @@ import {LowDetailGraphCanvas} from './LowDetailGraphCanvas';
 import {GraphMinimap, MINIMAP_MAX_WIDTH} from './GraphMinimap';
 import {GraphSettingsSheet, type GraphSettingOption} from './GraphSettingsSheet';
 import {shouldShowMinimap, transformCenteredOn} from './minimap';
+import {useGraphTotals} from './GraphTotalsContext';
 import {autoExpandPreferredNodes} from './autoExpandTree';
 import {
   createDeferredRecipeSourceResolver,
@@ -3466,6 +3467,37 @@ export function GraphScreen({
       console.error('Byproduct-credit preference could not be saved to localStorage.', error);
     }
   }, []);
+
+  const {publish: publishGraphTotals} = useGraphTotals();
+  const resourceTapHandlerRef = useRef((total: TreeTotal) => {
+    handleTreeTotalIngredientTap(total, 'input');
+  });
+  resourceTapHandlerRef.current = total => handleTreeTotalIngredientTap(total, 'input');
+  const onResourceTap = useCallback((total: TreeTotal) => {
+    resourceTapHandlerRef.current(total);
+  }, []);
+  useEffect(() => {
+    if (!isActive || !graphRootKey) return undefined;
+    publishGraphTotals({
+      rootKey: graphRootKey,
+      totals: treeTotals,
+      useByproducts,
+      onUseByproductsChange: updateUseByproducts,
+      onResourceTap,
+    });
+    // Left published on unmount rather than cleared: clearing races the next tree's publish and
+    // would blank the resources tab while switching between open trees.
+    return undefined;
+  }, [
+    graphRootKey,
+    isActive,
+    onResourceTap,
+    publishGraphTotals,
+    treeTotals,
+    updateUseByproducts,
+    useByproducts,
+  ]);
+
 
   // Native web listeners handle browser behaviors that React Native Web's
   // responder and inherited userSelect style do not consistently suppress in Safari.

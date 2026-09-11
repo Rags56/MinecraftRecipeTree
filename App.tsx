@@ -37,6 +37,8 @@ import {isLocalPackExportUrl} from './src/data/runtimeDocumentLimits';
 import {theme} from './src/theme';
 import type {Manifest} from './src/types';
 import {Tab, UiProvider, useUi} from './src/ui/UiContext';
+import {GraphTotalsProvider} from './src/graph/GraphTotalsContext';
+import {ResourcesScreen} from './src/components/ResourcesScreen';
 import {lightImpactFeedback, selectionFeedback} from './src/ui/haptics';
 import {
   MAXIMUM_INTERFACE_ZOOM,
@@ -375,7 +377,9 @@ function LoadedDatasetLayout({
       <DatasetReadinessMarker expectedPublicationId={expectedPublicationId} />
       <View style={styles.datasetContent}>
         <UiProvider>
-          <Root renderControls={renderControls} onImportPack={onImportPack} />
+          <GraphTotalsProvider>
+            <Root renderControls={renderControls} onImportPack={onImportPack} />
+          </GraphTotalsProvider>
         </UiProvider>
       </View>
     </View>
@@ -670,6 +674,7 @@ function Shell({
       <View style={styles.headerActionRow}>
         <TabBtn tab="items" label="Items" />
         <TabBtn tab="graph" label="Graph" />
+        <TabBtn tab="resources" label="Resources" />
         {data.capabilities.mobs && <TabBtn tab="mobs" label="Mobs" />}
       </View>
     ) : null;
@@ -1163,6 +1168,36 @@ function Shell({
               </Suspense>
             </View>
           )}
+          <View
+            style={[
+              styles.body,
+              Platform.OS !== 'web' && styles.nativeWorkspacePane,
+              Platform.OS !== 'web' && tab === 'resources' && styles.nativeWorkspacePaneActive,
+              Platform.OS !== 'web' && tab !== 'resources' && styles.nativeWorkspacePaneInactive,
+              Platform.OS === 'web' && tab !== 'resources' && styles.hidden,
+            ]}
+            pointerEvents={Platform.OS !== 'web' && tab !== 'resources' ? 'none' : 'auto'}
+            accessibilityElementsHidden={Platform.OS !== 'web' && tab !== 'resources'}
+            importantForAccessibility={
+              Platform.OS !== 'web' && tab !== 'resources' ? 'no-hide-descendants' : 'auto'
+            }>
+            <ResourcesScreen contentZoom={contentZoom} />
+          </View>
+          <View
+            style={[
+              styles.body,
+              Platform.OS !== 'web' && styles.nativeWorkspacePane,
+              Platform.OS !== 'web' && tab === 'resources' && styles.nativeWorkspacePaneActive,
+              Platform.OS !== 'web' && tab !== 'resources' && styles.nativeWorkspacePaneInactive,
+              Platform.OS === 'web' && tab !== 'resources' && styles.hidden,
+            ]}
+            pointerEvents={Platform.OS !== 'web' && tab !== 'resources' ? 'none' : 'auto'}
+            accessibilityElementsHidden={Platform.OS !== 'web' && tab !== 'resources'}
+            importantForAccessibility={
+              Platform.OS !== 'web' && tab !== 'resources' ? 'no-hide-descendants' : 'auto'
+            }>
+            <ResourcesScreen contentZoom={contentZoom} />
+          </View>
           {data.capabilities.mobs && hasVisitedMobs && (
             <View
               style={[
@@ -1335,6 +1370,7 @@ function MobileBottomNavigation({hasMobs}: {hasMobs: boolean}) {
     () => [
       {tab: 'items' as const, icon: '☷', label: 'Browse'},
       {tab: 'graph' as const, icon: '⌘', label: 'Tree'},
+      {tab: 'resources' as const, icon: '☑', label: 'Resources'},
       ...(hasMobs ? [{tab: 'mobs' as const, icon: '♟', label: 'Mobs'}] : []),
       {tab: 'settings' as const, icon: '⚙', label: 'Settings'},
     ],

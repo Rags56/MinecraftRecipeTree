@@ -3,7 +3,7 @@ import {Platform} from 'react-native';
 import {RecipeRef} from '../types';
 import type {GraphDirection} from '../graph/direction';
 
-export type Tab = 'items' | 'graph' | 'mobs' | 'settings';
+export type Tab = 'items' | 'graph' | 'resources' | 'mobs' | 'settings';
 
 /** One independently interactive recipe tree; every field here is exclusive to this tree. */
 export interface OpenGraphTree {
@@ -31,7 +31,11 @@ const ACTIVE_TAB_KEY = 'activeTab';
 
 function isTab(value: unknown): value is Tab {
   return (
-    value === 'items' || value === 'graph' || value === 'mobs' || value === 'settings'
+    value === 'items' ||
+    value === 'graph' ||
+    value === 'resources' ||
+    value === 'mobs' ||
+    value === 'settings'
   );
 }
 
