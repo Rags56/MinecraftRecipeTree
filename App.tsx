@@ -1100,8 +1100,12 @@ function Shell({
                           onToggleGraphControls={() =>
                             setShowGraphControls(value => !value)
                           }
+                          // Only wired up when a pager actually exists. With one tree open the
+                          // pager is already disabled, so suppressing it was a state change in the
+                          // app -- and a re-render of everything under it -- on the first event of
+                          // every drag, which is exactly where the stutter was.
                           onSwipeSuppressChange={
-                            tree.id === activeGraphTreeId
+                            openGraphTrees.length > 1 && tree.id === activeGraphTreeId
                               ? setGraphTreePagerSuppressed
                               : undefined
                           }

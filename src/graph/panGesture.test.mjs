@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {
@@ -289,4 +290,18 @@ test('a pan frame reuses the graph element lists instead of rebuilding them', ()
   );
   assert.doesNotMatch(memoBlock, /^\s+transform,$/mu);
   assert.match(graphScreenSource, /cullingTransform,\s*\n\s*exportingTree,/u);
+});
+
+test('starting a drag does not re-render the app when there is no pager to suppress', () => {
+  // The pager is only scrollable with more than one tree open, so suppressing it on the first
+  // event of every drag was a state change in the app -- and a re-render of everything under it --
+  // for no effect, which showed up as a stutter exactly at the start of a pan.
+  const appSource = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
+  assert.match(
+    appSource,
+    /onSwipeSuppressChange=\{\s*openGraphTrees\.length > 1 && tree\.id === activeGraphTreeId/u,
+  );
+  // The graph still reports it, so a real pager is still suppressed for the length of a drag.
+  assert.match(graphScreenSource, /onSwipeSuppressChange\?\.\(true\)/u);
+  assert.match(graphScreenSource, /onSwipeSuppressChange\?\.\(false\)/u);
 });
