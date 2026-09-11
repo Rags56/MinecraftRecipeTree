@@ -2766,6 +2766,39 @@ export function GraphScreen({
     [focusByproductProducer, openPickerWithErrorHandling, treeTotals],
   );
 
+  const handleCompactNodeTap = useCallback(
+    (node: ItemTreeNode, radial = false) => {
+      if (node.id === 'root') {
+        onItemTap(node);
+        return;
+      }
+      handleCollapsedIngredientTap(node, () =>
+        node.deferredRecipeExpansion || radial
+          ? onItemTap(node)
+          : openPickerWithErrorHandling(node),
+      );
+    },
+    [handleCollapsedIngredientTap, onItemTap, openPickerWithErrorHandling],
+  );
+  const handleItemNodeTap = useCallback(
+    (node: ItemTreeNode) => {
+      if (node.id === 'root') {
+        onItemTap(node);
+        return;
+      }
+      handleCollapsedIngredientTap(node, () => onItemTap(node));
+    },
+    [handleCollapsedIngredientTap, onItemTap],
+  );
+  const handleNodeInfo = useCallback(
+    (node: ItemTreeNode) => openItem(node.key),
+    [openItem],
+  );
+  const handleNodeSwap = useCallback(
+    (node: ItemTreeNode) => openPickerWithErrorHandling(node),
+    [openPickerWithErrorHandling],
+  );
+
   const handleTreeTotalIngredientTap = useCallback(
     (total: TreeTotal, kind: TreeTotalTargetKind) => {
       const node = findTreeTotalTarget(rootRef.current, total, kind);
@@ -4080,16 +4113,9 @@ export function GraphScreen({
                         )
                     : undefined
                 }
-                onTap={() =>
-                  n.item.id === 'root'
-                    ? onItemTap(n.item)
-                    : handleCollapsedIngredientTap(n.item, () =>
-                        n.item.deferredRecipeExpansion || n.radial
-                          ? onItemTap(n.item)
-                          : openPickerWithErrorHandling(n.item),
-                      )
-                }
-                onActions={pointer => openNodeMenu(n.item, pointer)}
+                radialTap={n.radial === true}
+                onTap={handleCompactNodeTap}
+                onActions={openNodeMenu}
               />
             ) : n.kind === 'item' ? (
               <ItemNodeView
@@ -4120,13 +4146,9 @@ export function GraphScreen({
                 }
                 showAmounts={showNodeAmounts}
                 rootActions={n.item.id === 'root' ? rootNodeActions : undefined}
-                onTap={() =>
-                  n.item.id === 'root'
-                    ? onItemTap(n.item)
-                    : handleCollapsedIngredientTap(n.item, () => onItemTap(n.item))
-                }
-                onInfo={() => openItem(n.item.key)}
-                onActions={pointer => openNodeMenu(n.item, pointer)}
+                onTap={handleItemNodeTap}
+                onInfo={handleNodeInfo}
+                onActions={openNodeMenu}
               />
             ) : (
               <SourceNodeView
@@ -4154,10 +4176,10 @@ export function GraphScreen({
                     n.item.alternatives,
                   ).length > 1
                 }
-                onCollapse={() => onItemTap(n.item)}
-                onSwap={() => openPickerWithErrorHandling(n.item)}
-                onInfo={() => openItem(n.item.key)}
-                onActions={pointer => openNodeMenu(n.item, pointer)}
+                onCollapse={onItemTap}
+                onSwap={handleNodeSwap}
+                onInfo={handleNodeInfo}
+                onActions={openNodeMenu}
               />
             ),
           )}
@@ -5398,10 +5420,18 @@ function NodeActionMenu({
   );
 }
 
-function CompactItemNodeView({
+/**
+ * Memoized: panning sets a new transform on every frame, which re-renders the graph, and without
+ * this every visible node re-rendered with it -- recipe previews, item chips and all. That cost is
+ * per frame rather than per tree, which is why a sixteen-node tree panned as badly as a large one.
+ * Every callback prop is node-taking so the parent can pass one stable function; an inline closure
+ * here is a new prop each frame and a memo cannot see past it.
+ */
+const CompactItemNodeView = React.memo(function CompactItemNodeView({
   x,
   y,
   node,
+  radialTap,
   requiredAmount,
   byproductCoverage,
   isRoot,
@@ -5439,8 +5469,11 @@ function CompactItemNodeView({
   deferredDuplicate: boolean;
   rootActions?: RootNodeActionProps;
   onChangeRecipe?: () => void;
-  onTap: () => void;
-  onActions: (pointer?: NodeActionPointer) => void;
+  /** True for a radial collapsed ingredient, which taps straight through to expanding. */
+  radialTap?: boolean;
+  /** Node-taking, so the parent passes one stable function rather than a closure per render. */
+  onTap: (node: ItemTreeNode, radial?: boolean) => void;
+  onActions: (node: ItemTreeNode, pointer?: NodeActionPointer) => void;
 }) {
   const data = useData();
   const item = data.itemsByKey.get(node.key);
@@ -5475,7 +5508,7 @@ function CompactItemNodeView({
   const handleTap = () => {
     if (!selectable || node.loading) return;
     if (!onChangeRecipe) {
-      onTap();
+      onTap(node, radialTap);
       return;
     }
     if (pendingTapRef.current) {
@@ -5485,12 +5518,12 @@ function CompactItemNodeView({
     }
     pendingTapRef.current = setTimeout(() => {
       pendingTapRef.current = null;
-      onTap();
+      onTap(node, radialTap);
     }, 280);
   };
-  const handlers = useNodeActionHandlers(handleTap, () => {
+  const handlers = useNodeActionHandlers(handleTap, pointer => {
     clearPendingTap();
-    onActions();
+    onActions(node, pointer);
   });
   return (
     <>
@@ -5581,9 +5614,16 @@ function CompactItemNodeView({
       )}
     </>
   );
-}
+});
 
-function ItemNodeView({
+/**
+ * Memoized: panning sets a new transform on every frame, which re-renders the graph, and without
+ * this every visible node re-rendered with it -- recipe previews, item chips and all. That cost is
+ * per frame rather than per tree, which is why a sixteen-node tree panned as badly as a large one.
+ * Every callback prop is node-taking so the parent can pass one stable function; an inline closure
+ * here is a new prop each frame and a memo cannot see past it.
+ */
+const ItemNodeView = React.memo(function ItemNodeView({
   x,
   y,
   node,
@@ -5613,9 +5653,10 @@ function ItemNodeView({
   terminalLabel: string;
   showAmounts: boolean;
   rootActions?: RootNodeActionProps;
-  onTap: () => void;
-  onInfo: () => void;
-  onActions: (pointer?: NodeActionPointer) => void;
+  /** Node-taking, so the parent passes one stable function rather than a closure per render. */
+  onTap: (node: ItemTreeNode) => void;
+  onInfo: (node: ItemTreeNode) => void;
+  onActions: (node: ItemTreeNode, pointer?: NodeActionPointer) => void;
 }) {
   const data = useData();
   const item = data.itemsByKey.get(node.key);
@@ -5643,7 +5684,13 @@ function ItemNodeView({
         ? `  ✓ ${formatIngredientQuantity(node.key, byproductCoverage.creditedAmount)} byproduct`
         : `  ${formatIngredientQuantity(node.key, byproductCoverage.remainingAmount)} needed · ${formatIngredientQuantity(node.key, byproductCoverage.creditedAmount)} byproduct`
     : '';
-  const handlers = useNodeActionHandlers(onTap, onActions);
+  const handleTap = useCallback(() => onTap(node), [node, onTap]);
+  const handleActions = useCallback(
+    (pointer?: NodeActionPointer) => onActions(node, pointer),
+    [node, onActions],
+  );
+  const handleInfo = useCallback(() => onInfo(node), [node, onInfo]);
+  const handlers = useNodeActionHandlers(handleTap, handleActions);
   return (
     <>
       <Pressable
@@ -5704,7 +5751,7 @@ function ItemNodeView({
       </View>
       <TouchableOpacity
         {...signalTarget(`graph.node.info.${nodeDepthBucket(node)}`)}
-        onPress={onInfo}
+        onPress={handleInfo}
         style={styles.infoBtn}
         hitSlop={6}>
         <Text style={[styles.smallBtnText, noSelect]}>ⓘ</Text>
@@ -5722,10 +5769,17 @@ function ItemNodeView({
       )}
     </>
   );
-}
+});
 
 /** Expanded item: one node with the item + amount in the header and the source below. */
-function SourceNodeView({
+/**
+ * Memoized: panning sets a new transform on every frame, which re-renders the graph, and without
+ * this every visible node re-rendered with it -- recipe previews, item chips and all. That cost is
+ * per frame rather than per tree, which is why a sixteen-node tree panned as badly as a large one.
+ * Every callback prop is node-taking so the parent can pass one stable function; an inline closure
+ * here is a new prop each frame and a memo cannot see past it.
+ */
+const SourceNodeView = React.memo(function SourceNodeView({
   x,
   y,
   w,
@@ -5761,10 +5815,11 @@ function SourceNodeView({
   showAmounts: boolean;
   rootActions?: RootNodeActionProps;
   canSwap: boolean;
-  onCollapse: () => void;
-  onSwap: () => void;
-  onInfo: () => void;
-  onActions: (pointer?: NodeActionPointer) => void;
+  /** Node-taking, so the parent passes one stable function rather than a closure per render. */
+  onCollapse: (node: ItemTreeNode) => void;
+  onSwap: (node: ItemTreeNode) => void;
+  onInfo: (node: ItemTreeNode) => void;
+  onActions: (node: ItemTreeNode, pointer?: NodeActionPointer) => void;
 }) {
   const data = useData();
   const catalogItem = data.itemsByKey.get(item.key);
@@ -5841,7 +5896,14 @@ function SourceNodeView({
       )}
     </View>
   );
-  const handlers = useNodeActionHandlers(onCollapse, onActions);
+  const handleCollapse = useCallback(() => onCollapse(item), [item, onCollapse]);
+  const handleActions = useCallback(
+    (pointer?: NodeActionPointer) => onActions(item, pointer),
+    [item, onActions],
+  );
+  const handleSwap = useCallback(() => onSwap(item), [item, onSwap]);
+  const handleInfo = useCallback(() => onInfo(item), [item, onInfo]);
+  const handlers = useNodeActionHandlers(handleCollapse, handleActions);
 
   return (
     <Pressable
@@ -5897,7 +5959,7 @@ function SourceNodeView({
         {canSwap && (
           <TouchableOpacity
             {...signalTarget(`graph.node.swap.${nodeDepthBucket(item)}`)}
-            onPress={onSwap}
+            onPress={handleSwap}
             hitSlop={6}
             style={styles.headerBtn}>
             <Text style={[styles.smallBtnText, noSelect]}>⇄</Text>
@@ -5905,7 +5967,7 @@ function SourceNodeView({
         )}
         <TouchableOpacity
           {...signalTarget(`graph.node.info.${nodeDepthBucket(item)}`)}
-          onPress={onInfo}
+          onPress={handleInfo}
           hitSlop={6}
           style={styles.headerBtn}>
           <Text style={[styles.smallBtnText, noSelect]}>ⓘ</Text>
@@ -6039,7 +6101,7 @@ function SourceNodeView({
       )}
     </Pressable>
   );
-}
+});
 
 function CtrlBtn({
   label,

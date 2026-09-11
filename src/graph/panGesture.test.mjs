@@ -109,7 +109,9 @@ test('compact byproduct nodes support alternate recipe gestures', () => {
   assert.match(graphScreenSource, /long press or right click for node options/u);
   assert.match(
     graphScreenSource,
-    /pendingTapRef\.current = setTimeout\([\s\S]*?onTap\(\)[\s\S]*?280/u,
+    // Node-taking now, so the node views can be memoized; the 280ms wait that separates a single
+    // tap from a double tap is what this is guarding.
+    /pendingTapRef\.current = setTimeout\([\s\S]*?onTap\(node, radialTap\)[\s\S]*?280/u,
   );
   assert.match(
     graphScreenSource,
@@ -207,4 +209,23 @@ test('rebasing after a pinch preserves the current transform before panning resu
     y: 445,
     scale: 1.4,
   });
+});
+
+test('panning does not re-render every visible node', () => {
+  // A new transform every frame re-renders the graph. Unless the node views are memoized *and* their
+  // props keep their identity, every visible node re-renders with it -- recipe previews, chips
+  // and all -- which is a per-frame cost rather than a per-tree one.
+  for (const view of ['CompactItemNodeView', 'ItemNodeView', 'SourceNodeView']) {
+    assert.match(
+      graphScreenSource,
+      new RegExp(`const ${view} = React\\.memo\\(function ${view}\\(`, 'u'),
+      `${view} is not memoized`,
+    );
+  }
+  // An inline closure is a fresh prop on every frame, and a memo cannot see past it.
+  const renderBlock = graphScreenSource.slice(
+    graphScreenSource.indexOf('{!rasterLowDetailGraph && renderedGraph?.nodes.map(n =>'),
+  );
+  const nodeMarkup = renderBlock.slice(0, renderBlock.indexOf('</View>'));
+  assert.doesNotMatch(nodeMarkup, /on(Tap|Collapse|Swap|Info|Actions)=\{\(?\w*\)? ?=>/u);
 });
