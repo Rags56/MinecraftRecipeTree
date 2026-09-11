@@ -3632,6 +3632,8 @@ export function GraphScreen({
     if (!isActive || !graphRootKey) return undefined;
     publishGraphTotals({
       rootKey: graphRootKey,
+      // The production plan is edited in place, so version is what tells this it moved.
+      rootAmount: root?.productionPlan?.amount ?? root?.amount ?? 1,
       totals: treeTotals,
       useByproducts,
       onUseByproductsChange: updateUseByproducts,
@@ -3649,9 +3651,11 @@ export function GraphScreen({
     onResourceTap,
     pickerLookup,
     publishGraphTotals,
+    root,
     treeTotals,
     updateUseByproducts,
     useByproducts,
+    version,
   ]);
 
 

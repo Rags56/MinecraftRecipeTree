@@ -10,6 +10,8 @@ import type {TreeTotal, TreeTotals} from './treeTotals';
 export interface GraphTotalsSnapshot {
   /** Item key of the tree's root, which scopes the checklist. */
   rootKey: string;
+  /** How many of the root the tree is built for, which is what every amount below is relative to. */
+  rootAmount: number | null;
   totals: TreeTotals;
   /** One preference shared with the tree, not a second copy of it. */
   useByproducts: boolean;
@@ -41,6 +43,7 @@ export function GraphTotalsProvider({children}: {children: React.ReactNode}) {
       (current &&
         next &&
         current.rootKey === next.rootKey &&
+        current.rootAmount === next.rootAmount &&
         current.totals === next.totals &&
         current.useByproducts === next.useByproducts &&
         current.onUseByproductsChange === next.onUseByproductsChange &&

@@ -250,3 +250,24 @@ test('exporting the list is an action on the list, not on the graph settings', (
   // HQ PNG renders the canvas, so that one stays with the graph.
   assert.match(graph, /key: 'export-png'/u);
 });
+
+test('the checklist states how many of the root it is for', () => {
+  // Every amount in the list is relative to it, so a list that does not say it is ambiguous.
+  const resources = readFileSync(
+    new URL('../components/ResourcesScreen.tsx', import.meta.url),
+    'utf8',
+  );
+  assert.match(
+    resources,
+    /formatIngredientQuantity\(snapshot\.rootKey, snapshot\.rootAmount\)/u,
+  );
+  const graph = readFileSync(new URL('./GraphScreen.tsx', import.meta.url), 'utf8');
+  // The planned amount wins over the node's own, and it is edited in place, so version has to be
+  // a dependency of the publish or the tab keeps showing the figure it was opened with.
+  assert.match(
+    graph,
+    /rootAmount: root\?\.productionPlan\?\.amount \?\? root\?\.amount \?\? 1/u,
+  );
+  const publish = graph.slice(graph.indexOf('publishGraphTotals({'));
+  assert.match(publish.slice(0, publish.indexOf(']);')), /^\s+version,$/mu);
+});

@@ -142,9 +142,15 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
       <View style={styles.header}>
         <ItemIcon item={rootItem} itemKey={snapshot.rootKey} size={32} />
         <View style={styles.headerCopy}>
-          <Text style={styles.rootName} numberOfLines={1}>
-            {rootName}
-          </Text>
+          <View style={styles.rootLine}>
+            <Text style={styles.rootName} numberOfLines={1}>
+              {rootName}
+            </Text>
+            {/* What every amount in the list is relative to, so it belongs beside the item. */}
+            <Text style={styles.rootAmount}>
+              {formatIngredientQuantity(snapshot.rootKey, snapshot.rootAmount)}
+            </Text>
+          </View>
           <Text style={styles.headerDetail}>
             {countable.size} of {resources.length} gathered
           </Text>
@@ -276,7 +282,9 @@ const styles = StyleSheet.create({
   byproductsTextOn: {color: theme.accent},
   header: {flexDirection: 'row', alignItems: 'center', gap: 10},
   headerCopy: {flex: 1, minWidth: 0},
-  rootName: {color: theme.text, fontSize: 16, fontWeight: '700'},
+  rootLine: {flexDirection: 'row', alignItems: 'baseline', gap: 6},
+  rootName: {color: theme.text, fontSize: 16, fontWeight: '700', flexShrink: 1},
+  rootAmount: {color: theme.accent, fontSize: 14, fontWeight: '700'},
   headerDetail: {color: theme.textDim, fontSize: 12, marginTop: 2},
   percentage: {color: theme.accent, fontSize: 22, fontWeight: '800'},
   progressTrack: {
