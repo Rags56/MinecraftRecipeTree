@@ -111,3 +111,23 @@ export function visibleGraphElements(
     culled: nodes.length < graph.nodes.length || edges.length < graph.edges.length,
   };
 }
+
+/**
+ * Culling runs against the live transform, so panning rebuilt the visible node and edge arrays on
+ * every frame -- and with them every React element in the graph. That allocation churn is what
+ * shows up as garbage collection in a profile of a drag, on both platforms. The overscan already
+ * renders a margin beyond the viewport, so the visible set only has to be recomputed once the
+ * canvas has moved far enough to eat into it.
+ */
+export function shouldRecomputeCulling(
+  previous: GraphTransform,
+  next: GraphTransform,
+  overscan = GRAPH_VIEWPORT_OVERSCAN,
+): boolean {
+  if (previous.scale !== next.scale) return true;
+  // Half the margin, so a recompute always lands well before the edge of what was drawn.
+  const threshold = Math.max(1, (overscan / 2) * next.scale);
+  return (
+    Math.abs(next.x - previous.x) >= threshold || Math.abs(next.y - previous.y) >= threshold
+  );
+}

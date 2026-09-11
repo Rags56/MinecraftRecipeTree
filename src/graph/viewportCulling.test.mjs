@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {visibleGraphElements} from './viewportCulling.ts';
+import {
+  shouldRecomputeCulling,
+  visibleGraphElements,
+} from './viewportCulling.ts';
 
 function node(id, x, y, w = 50, h = 50) {
   return {
@@ -119,4 +122,27 @@ test('skips connector geometry work when low-detail rendering hides every edge',
   assert.deepEqual(visible.nodes.map(entry => entry.id), ['root', 'child']);
   assert.deepEqual(visible.edges, []);
   assert.equal(visible.culled, true);
+});
+
+test('recomputes the visible set only once the canvas eats into its overscan', () => {
+  const base = {x: 0, y: 0, scale: 1};
+  // Small pans stay inside the margin that was already drawn, so nothing is rebuilt.
+  assert.equal(shouldRecomputeCulling(base, {x: -40, y: 0, scale: 1}), false);
+  assert.equal(shouldRecomputeCulling(base, {x: 0, y: 60, scale: 1}), false);
+  // Past half the overscan it has to be rebuilt before the drawn margin runs out.
+  assert.equal(shouldRecomputeCulling(base, {x: -200, y: 0, scale: 1}), true);
+  assert.equal(shouldRecomputeCulling(base, {x: 0, y: 200, scale: 1}), true);
+});
+
+test('always recomputes when the zoom changes, which changes everything visible', () => {
+  const base = {x: 0, y: 0, scale: 1};
+  assert.equal(shouldRecomputeCulling(base, {x: 0, y: 0, scale: 1.01}), true);
+  assert.equal(shouldRecomputeCulling(base, {x: 0, y: 0, scale: 0.5}), true);
+});
+
+test('scales its threshold with the zoom, since a screen pixel covers less graph when zoomed in', () => {
+  const base = {x: 0, y: 0, scale: 4};
+  // At 4x, half the overscan is 480 screen pixels of travel.
+  assert.equal(shouldRecomputeCulling(base, {x: -300, y: 0, scale: 4}), false);
+  assert.equal(shouldRecomputeCulling(base, {x: -600, y: 0, scale: 4}), true);
 });

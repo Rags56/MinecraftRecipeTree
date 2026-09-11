@@ -196,7 +196,11 @@ import type {
   TreeTotal,
   TreeTotals,
 } from './treeTotals';
-import {GRAPH_VIEWPORT_OVERSCAN, visibleGraphElements} from './viewportCulling';
+import {
+  GRAPH_VIEWPORT_OVERSCAN,
+  shouldRecomputeCulling,
+  visibleGraphElements,
+} from './viewportCulling';
 import {indexedRecipeRefs} from './indexedRecipeRefs';
 import {
   DENSE_GRAPH_NODE_THRESHOLD,
@@ -873,6 +877,7 @@ export function GraphScreen({
     // the imperative reference synchronized so every event sees the newest transform.
     transformRef.current = next;
     setTransform(next);
+    setCullingTransform(next);
   }, []);
   /**
    * Pointer and touch move events arrive far faster than the screen refreshes -- a high-polling
@@ -891,7 +896,11 @@ export function GraphScreen({
       transformFrameRef.current = 0;
       const pending = pendingTransformRef.current;
       pendingTransformRef.current = null;
-      if (pending) setTransform(pending);
+      if (!pending) return;
+      setTransform(pending);
+      setCullingTransform(current =>
+        shouldRecomputeCulling(current, pending) ? pending : current,
+      );
     });
   }, []);
   useEffect(
@@ -902,6 +911,11 @@ export function GraphScreen({
   );
   const viewportRef = useRef({w: 0, h: 0});
   const [viewportSize, setViewportSize] = useState({w: 0, h: 0});
+  const [cullingTransform, setCullingTransform] = useState<GraphTransform>({
+    x: 60,
+    y: 60,
+    scale: 1,
+  });
   const needsFitRef = useRef(false);
   const wrapRef = useRef<View>(null);
   const anchorRef = useRef<View>(null);
@@ -2687,7 +2701,7 @@ export function GraphScreen({
     }
     const visible = visibleGraphElements(
       graph,
-      transform,
+      cullingTransform,
       viewportSize,
       rasterLowDetailGraph ? 0 : GRAPH_VIEWPORT_OVERSCAN,
       // Kept at every tier: the lines are what make this read as a tree rather than as loose
@@ -2703,12 +2717,12 @@ export function GraphScreen({
         ).edges as ByproductSupplyEdge[]);
     return {...visible, supplyEdges: visibleSupplyEdges};
   }, [
+    cullingTransform,
     exportingTree,
     graph,
     lowDetailGraph,
     rasterLowDetailGraph,
     supplyEdges,
-    transform,
     viewportSize,
   ]);
   const showNodeAmounts = shouldShowNodeAmounts(transform.scale, exportingTree);
@@ -3891,141 +3905,31 @@ export function GraphScreen({
     useByproducts,
   ]);
 
-  if (!graphRootKey || !root) {
-    return (
-      <View style={styles.emptyWrap}>
-        <Text style={styles.emptyTitle}>No item selected</Text>
-        <Text style={styles.emptyText}>
-          Open an item and tap one of its recipe cards to start a crafting tree. Tap nodes to
-          expand how each item is obtained — recipes, mining, or mob drops.
-        </Text>
-        <TouchableOpacity
-          {...signalTarget('graph.empty.browse-items')}
-          style={styles.emptyBtn}
-          onPress={() => setTab('items')}>
-          <Text style={styles.emptyBtnText}>Browse items</Text>
-        </TouchableOpacity>
-        {treeShareModal}
-      </View>
-    );
-  }
-
-  const rootNodeActions: RootNodeActionProps | undefined = showRootActions
-    ? {
-        amount: root.productionPlan?.amount ?? root.amount ?? 1,
-        onAmountChange: updateRootRequestedAmount,
-        onChangeRecipe: () => openRootPicker('inputs'),
-        onAddUsedBy: () => openRootPicker('outputs'),
-    }
-    : undefined;
-  const graphMenuScaleStyle =
-    Platform.OS === 'web'
-      ? ({zoom: interfaceZoom} as unknown as object)
-      : {transform: [{scale: interfaceZoom}], transformOrigin: 'top right', maxWidth: `${96 / interfaceZoom}%`} as const;
-  const nodeMenuDirection: GraphDirection =
-    nodeMenu?.node.id === 'root' ? 'inputs' : graphDirection;
-  const nodeMenuChoiceCount = nodeMenu
-    ? choicesFor(
-        nodeMenu.node.key,
-        nodeMenuDirection,
-        nodeMenu.node.alternatives,
-      ).length
-    : 0;
-  const nodeMenuHasRememberedSource = nodeMenu
-    ? !!preferredSourceFor(nodeMenu.node.key, nodeMenu.node.alternatives)
-    : false;
-  const nodeMenuParentSource = nodeMenu
-    ? parentRecipeSource(root, nodeMenu.node)
-    : null;
-  const nodeMenuCanToggleReusable =
-    nodeMenuParentSource?.kind === 'recipe' &&
-    nodeMenuParentSource.direction === 'inputs' &&
-    nodeMenuParentSource.ref !== undefined;
-  const nodeMenuPlacement = nodeMenu
-    ? nodeContextMenuPlacement(
-        nodeMenu.anchor,
-        {width: viewportSize.w, height: viewportSize.h},
-        interfaceZoom,
-      )
-    : null;
-
-  return (
-    <View style={styles.root}>
-      <View
-        ref={setCanvasRef}
-        style={[styles.canvas, noSelect]}
-        onLayout={e => {
-          const nextViewport = {
-            w: e.nativeEvent.layout.width,
-            h: e.nativeEvent.layout.height,
-          };
-          viewportRef.current = nextViewport;
-          setViewportSize(current =>
-            current.w === nextViewport.w && current.h === nextViewport.h
-              ? current
-              : nextViewport,
-          );
-          // The graph tab mounts hidden; fit once it actually gets a size.
-          if (needsFitRef.current && fitView()) {
-            needsFitRef.current = false;
+  // Memoized and hoisted above the empty-tree return, because the element lists below depend on
+  // it and a fresh object each render would rebuild every node.
+  const rootNodeActions = useMemo<RootNodeActionProps | undefined>(
+    () =>
+      showRootActions && root
+        ? {
+            amount: root.productionPlan?.amount ?? root.amount ?? 1,
+            onAmountChange: updateRootRequestedAmount,
+            onChangeRecipe: () => openRootPicker('inputs'),
+            onAddUsedBy: () => openRootPicker('outputs'),
           }
-        }}
-        {...responder.panHandlers}>
-        {rasterLowDetailGraph && (
-          <LowDetailGraphCanvas
-            nodes={renderedGraph?.nodes ?? []}
-            edges={renderedGraph?.edges ?? []}
-            transform={displayTransform}
-            viewport={viewportSize}
-          />
-        )}
-        {/*
-          Keep translation outside the detailed web scale layer. Detailed nodes
-          use CSS zoom for crisp text and pixel art. The web low-detail tier is
-          painted above as one fixed canvas; this transformed path remains for
-          native low-detail nodes.
-        */}
-        <View
-          style={[
-            styles.anchor,
-            Platform.OS !== 'web' && styles.nativeAnchor,
-            // Translated with a transform rather than left/top on both web tiers: left and top
-            // are layout properties, so panning reflowed every node in the tree each frame, while
-            // a transform is composited. Scale still belongs to the inner layer below, so this
-            // keeps translation outside it exactly as before.
-            Platform.OS === 'web'
-              ? ({
-                  transform: [
-                    {translateX: displayTransform.x},
-                    {translateY: displayTransform.y},
-                  ],
-                  willChange: 'transform',
-                } as unknown as object)
-              : {
-                  transform: [
-                    {translateX: displayTransform.x},
-                    {translateY: displayTransform.y},
-                    {scale: displayTransform.scale},
-                  ],
-                },
-          ]}>
-          <View
-            ref={anchorRef}
-            collapsable={false}
-            style={[
-              styles.anchor,
-              Platform.OS !== 'web' && styles.nativeAnchor,
-              Platform.OS === 'web' && !displayTransform.nativeScale
-                ? lowDetailGraph
-                  ? ({
-                      transform: [{scale: displayTransform.scale}],
-                      transformOrigin: '0 0',
-                      willChange: 'transform',
-                    } as unknown as object)
-                  : ({zoom: displayTransform.scale} as unknown as object)
-                : null,
-            ]}>
-          {!rasterLowDetailGraph && renderedGraph?.edges.map((e, i) => (
+        : undefined,
+    // version: the production plan is edited in place on the root.
+    [openRootPicker, root, showRootActions, updateRootRequestedAmount, version],
+  );
+
+  /**
+   * The element lists are memoized, not just the components in them. A pan changes only the
+   * transform, and a profile of one showed ten milliseconds of a sixteen millisecond frame
+   * inside the refresh observer: with the culled set now steady between frames, holding these
+   * arrays by identity lets React skip the whole graph subtree instead of rebuilding an element
+   * and a props object for every node and edge on its way to the same result.
+   */
+  const edgeElements = useMemo(
+    () => !rasterLowDetailGraph && renderedGraph?.edges.map((e, i) => (
             <View
               key={`e${i}`}
               style={[
@@ -4042,8 +3946,11 @@ export function GraphScreen({
                 },
               ]}
             />
-          ))}
-          {!lowDetailGraph && renderedGraph?.supplyEdges.map(edge => (
+          )),
+    [rasterLowDetailGraph, renderedGraph],
+  );
+  const supplyEdgeElements = useMemo(
+    () => !lowDetailGraph && renderedGraph?.supplyEdges.map(edge => (
             <View
               key={`byproduct:${edge.targetNodeId}:${edge.producerSourceId}`}
               pointerEvents="none"
@@ -4058,8 +3965,11 @@ export function GraphScreen({
                 },
               ]}
             />
-          ))}
-          {!rasterLowDetailGraph && renderedGraph?.nodes.map(n =>
+          )),
+    [lowDetailGraph, renderedGraph],
+  );
+  const nodeElements = useMemo(
+    () => !rasterLowDetailGraph && renderedGraph?.nodes.map(n =>
             lowDetailGraph ? (
               <LowDetailNodeView
                 key={n.id}
@@ -4209,7 +4119,159 @@ export function GraphScreen({
                 onActions={openNodeMenu}
               />
             ),
-          )}
+          ),
+    [
+      animateMobs,
+      choicesFor,
+      compactMode,
+      displayedAmountFor,
+      focusedSourceId,
+      graphDirection,
+      handleCompactNodeTap,
+      handleItemNodeTap,
+      handleNodeInfo,
+      handleNodeSwap,
+      isCollapsedBranch,
+      onItemTap,
+      openNodeMenu,
+      radialLayout,
+      rasterLowDetailGraph,
+      renderedGraph,
+      rootNodeActions,
+      showNodeAmounts,
+      treeTotals,
+    ],
+  );
+
+  if (!graphRootKey || !root) {
+    return (
+      <View style={styles.emptyWrap}>
+        <Text style={styles.emptyTitle}>No item selected</Text>
+        <Text style={styles.emptyText}>
+          Open an item and tap one of its recipe cards to start a crafting tree. Tap nodes to
+          expand how each item is obtained — recipes, mining, or mob drops.
+        </Text>
+        <TouchableOpacity
+          {...signalTarget('graph.empty.browse-items')}
+          style={styles.emptyBtn}
+          onPress={() => setTab('items')}>
+          <Text style={styles.emptyBtnText}>Browse items</Text>
+        </TouchableOpacity>
+        {treeShareModal}
+      </View>
+    );
+  }
+
+  const graphMenuScaleStyle =
+    Platform.OS === 'web'
+      ? ({zoom: interfaceZoom} as unknown as object)
+      : {transform: [{scale: interfaceZoom}], transformOrigin: 'top right', maxWidth: `${96 / interfaceZoom}%`} as const;
+  const nodeMenuDirection: GraphDirection =
+    nodeMenu?.node.id === 'root' ? 'inputs' : graphDirection;
+  const nodeMenuChoiceCount = nodeMenu
+    ? choicesFor(
+        nodeMenu.node.key,
+        nodeMenuDirection,
+        nodeMenu.node.alternatives,
+      ).length
+    : 0;
+  const nodeMenuHasRememberedSource = nodeMenu
+    ? !!preferredSourceFor(nodeMenu.node.key, nodeMenu.node.alternatives)
+    : false;
+  const nodeMenuParentSource = nodeMenu
+    ? parentRecipeSource(root, nodeMenu.node)
+    : null;
+  const nodeMenuCanToggleReusable =
+    nodeMenuParentSource?.kind === 'recipe' &&
+    nodeMenuParentSource.direction === 'inputs' &&
+    nodeMenuParentSource.ref !== undefined;
+  const nodeMenuPlacement = nodeMenu
+    ? nodeContextMenuPlacement(
+        nodeMenu.anchor,
+        {width: viewportSize.w, height: viewportSize.h},
+        interfaceZoom,
+      )
+    : null;
+
+  return (
+    <View style={styles.root}>
+      <View
+        ref={setCanvasRef}
+        style={[styles.canvas, noSelect]}
+        onLayout={e => {
+          const nextViewport = {
+            w: e.nativeEvent.layout.width,
+            h: e.nativeEvent.layout.height,
+          };
+          viewportRef.current = nextViewport;
+          setViewportSize(current =>
+            current.w === nextViewport.w && current.h === nextViewport.h
+              ? current
+              : nextViewport,
+          );
+          // The graph tab mounts hidden; fit once it actually gets a size.
+          if (needsFitRef.current && fitView()) {
+            needsFitRef.current = false;
+          }
+        }}
+        {...responder.panHandlers}>
+        {rasterLowDetailGraph && (
+          <LowDetailGraphCanvas
+            nodes={renderedGraph?.nodes ?? []}
+            edges={renderedGraph?.edges ?? []}
+            transform={displayTransform}
+            viewport={viewportSize}
+          />
+        )}
+        {/*
+          Keep translation outside the detailed web scale layer. Detailed nodes
+          use CSS zoom for crisp text and pixel art. The web low-detail tier is
+          painted above as one fixed canvas; this transformed path remains for
+          native low-detail nodes.
+        */}
+        <View
+          style={[
+            styles.anchor,
+            Platform.OS !== 'web' && styles.nativeAnchor,
+            // Translated with a transform rather than left/top on both web tiers: left and top
+            // are layout properties, so panning reflowed every node in the tree each frame, while
+            // a transform is composited. Scale still belongs to the inner layer below, so this
+            // keeps translation outside it exactly as before.
+            Platform.OS === 'web'
+              ? ({
+                  transform: [
+                    {translateX: displayTransform.x},
+                    {translateY: displayTransform.y},
+                  ],
+                  willChange: 'transform',
+                } as unknown as object)
+              : {
+                  transform: [
+                    {translateX: displayTransform.x},
+                    {translateY: displayTransform.y},
+                    {scale: displayTransform.scale},
+                  ],
+                },
+          ]}>
+          <View
+            ref={anchorRef}
+            collapsable={false}
+            style={[
+              styles.anchor,
+              Platform.OS !== 'web' && styles.nativeAnchor,
+              Platform.OS === 'web' && !displayTransform.nativeScale
+                ? lowDetailGraph
+                  ? ({
+                      transform: [{scale: displayTransform.scale}],
+                      transformOrigin: '0 0',
+                      willChange: 'transform',
+                    } as unknown as object)
+                  : ({zoom: displayTransform.scale} as unknown as object)
+                : null,
+            ]}>
+          {edgeElements}
+          {supplyEdgeElements}
+          {nodeElements}
           </View>
         </View>
       </View>

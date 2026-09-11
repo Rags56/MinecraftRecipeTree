@@ -272,3 +272,21 @@ test('panning composites on web instead of reflowing the tree', () => {
   assert.doesNotMatch(block, /left: displayTransform\.x/u);
   assert.doesNotMatch(block, /top: displayTransform\.y/u);
 });
+
+test('a pan frame reuses the graph element lists instead of rebuilding them', () => {
+  // A profile of a pan put ten milliseconds of a sixteen millisecond frame inside the refresh
+  // observer, while layout accounted for nineteen milliseconds across the whole recording. The
+  // cost was building an element and a props object per node and edge on the way to the same
+  // result, so the lists are held by identity and the culled set they come from is steady.
+  assert.match(graphScreenSource, /const nodeElements = useMemo\(/u);
+  assert.match(graphScreenSource, /const edgeElements = useMemo\(/u);
+  assert.match(graphScreenSource, /\{nodeElements\}/u);
+  assert.match(graphScreenSource, /\{edgeElements\}/u);
+  // None of them may depend on the live transform, or they would rebuild every frame regardless.
+  const memoBlock = graphScreenSource.slice(
+    graphScreenSource.indexOf('const edgeElements = useMemo('),
+    graphScreenSource.indexOf('if (!graphRootKey || !root) {'),
+  );
+  assert.doesNotMatch(memoBlock, /^\s+transform,$/mu);
+  assert.match(graphScreenSource, /cullingTransform,\s*\n\s*exportingTree,/u);
+});
