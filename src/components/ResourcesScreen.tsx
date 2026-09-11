@@ -15,10 +15,17 @@ import {useData} from '../data/DataContext';
 import {displayIngredientName} from '../data/ingredientTags';
 import {formatIngredientQuantity} from '../data/ingredientQuantities';
 import {useGraphTotals} from '../graph/GraphTotalsContext';
+import {
+  catalystItemsKey,
+  loadCatalystItems,
+  persistCatalystItems,
+  withCatalystItem,
+} from '../graph/catalystItems';
 import {findTreeNodeById} from '../graph/treeFocus';
 import {
   filterOutlineRows,
   gatherableNodeIdsUnder,
+  outlineRowIdentity,
   resourceOutlineRows,
   type ResourceOutlineKind,
   type ResourceOutlineRow,
@@ -59,6 +66,14 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
   }, [progressKey]);
 
   const [listKind, setListKind] = useState<ResourceOutlineKind>('consumed');
+  // Which items the user has moved to the tools list. Nothing arrives there on its own: a pack
+  // saying a recipe keeps an item describes the craft, not how someone wants to shop for it.
+  const [catalysts, setCatalysts] = useState<ReadonlySet<string>>(new Set());
+  const catalystsKey = catalystItemsKey(data.descriptor);
+  useEffect(() => {
+    setCatalysts(loadCatalystItems(data.descriptor));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the key is the descriptor's identity.
+  }, [catalystsKey]);
   const outline = useMemo(
     () =>
       snapshot
@@ -72,7 +87,10 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [snapshot, snapshot?.version],
   );
-  const rows = useMemo(() => filterOutlineRows(outline, listKind), [listKind, outline]);
+  const rows = useMemo(
+    () => filterOutlineRows(outline, listKind, catalysts),
+    [catalysts, listKind, outline],
+  );
   /**
    * Progress is counted per list. A tool is needed once however much is being built, so counting
    * one machine as far as four hundred ingots would flatter or bury the real work; and a list that
@@ -81,14 +99,14 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
   const gatherableIn = useCallback(
     (kind: ResourceOutlineKind) =>
       snapshot?.root
-        ? gatherableNodeIdsUnder(
-            snapshot.root,
-            snapshot.totals.byproductCoverageByNode,
+        ? gatherableNodeIdsUnder(snapshot.root, {
+            byproductCoverageByNode: snapshot.totals.byproductCoverageByNode,
             kind,
-          )
+            catalysts,
+          })
         : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps -- version tracks in-place tree edits.
-    [snapshot, snapshot?.version],
+    [catalysts, snapshot, snapshot?.version],
   );
   const catalystNodeIds = useMemo(() => gatherableIn('catalyst'), [gatherableIn]);
   const gatherable = useMemo(
@@ -148,12 +166,16 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
       // Scoped to the list on screen: ticking a section in Items must not strike off the tools
       // inside it, which are a different list with its own progress.
       return node
-        ? gatherableNodeIdsUnder(node, coverage, listKind)
+        ? gatherableNodeIdsUnder(node, {
+            byproductCoverageByNode: coverage,
+            kind: listKind,
+            catalysts,
+          })
         : row.byproductCovered
           ? []
           : [row.nodeId];
     },
-    [listKind, nodeById],
+    [catalysts, listKind, nodeById],
   );
   const rowState = useCallback(
     (row: ResourceOutlineRow) => {
@@ -182,14 +204,22 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
   completedRef.current = completed;
   const [menuRow, setMenuRow] = useState<ResourceOutlineRow | null>(null);
   const openRowMenu = useCallback((row: ResourceOutlineRow) => setMenuRow(row), []);
+  const menuRowIsCatalyst =
+    menuRow !== null && catalysts.has(outlineRowIdentity(menuRow));
   const setRowKind = useCallback(() => {
     const row = menuRow;
     setMenuRow(null);
     if (!row) return;
-    const node = nodeById(row.nodeId);
-    // The tree's own override, so both views agree about what is consumed and it persists.
-    if (node) snapshotRef.current?.onToggleReusable(node);
-  }, [menuRow, nodeById]);
+    // Which list the item is shown on, and nothing else: the tree's own idea of what the recipe
+    // consumes is left alone, so amounts, byproducts and the graph do not move.
+    const next = withCatalystItem(
+      catalysts,
+      outlineRowIdentity(row),
+      !catalysts.has(outlineRowIdentity(row)),
+    );
+    setCatalysts(next);
+    persistCatalystItems(data.descriptor, next);
+  }, [catalysts, data.descriptor, menuRow]);
   const tickRow = useCallback(
     (row: ResourceOutlineRow, done: boolean) => {
       if (!rootKey) return;
@@ -367,14 +397,25 @@ export function ResourcesScreen({contentZoom = 1}: {contentZoom?: number}) {
               style={styles.menuAction}
               onPress={setRowKind}>
               <Text style={styles.menuActionText}>
-                {menuRow?.consumed ? 'Set as catalyst' : 'Set as resource'}
+                {menuRowIsCatalyst ? 'Treat as resource' : 'Treat as tool/catalyst'}
               </Text>
               <Text style={styles.menuActionHint}>
-                {menuRow?.consumed
-                  ? 'Kept by the recipe rather than consumed, and listed under Catalysts & tools'
-                  : 'Consumed by the recipe, and listed under Items'}
+                {menuRowIsCatalyst
+                  ? 'Move it back to Items and count it with the materials'
+                  : 'Move it to Catalysts & tools, which the tree and its amounts ignore'}
               </Text>
             </TouchableOpacity>
+            {menuRow?.consumed === false && !menuRowIsCatalyst && (
+              // Worth knowing when deciding, and no more than that: the pack's word on how the
+              // craft behaves does not put anything on a list.
+              <Text style={styles.menuNote}>
+                This pack says the recipe keeps this rather than consuming it
+                {menuRow.retentionUses === undefined
+                  ? ''
+                  : `, for ${String(menuRow.retentionUses)} crafts`}
+                .
+              </Text>
+            )}
             <TouchableOpacity
               accessibilityRole="button"
               style={styles.menuCancel}
@@ -444,7 +485,7 @@ const OutlineRow = React.memo(function OutlineRow({
         // Indented by depth, which is what makes this read as the tree it came from.
         {marginLeft: row.depth * 18},
       ]}>
-      <TouchableOpacity
+      <Pressable
         {...signalTarget(section ? 'resources.toggle-section' : 'resources.open-in-tree')}
         accessibilityRole="button"
         accessibilityLabel={`${name}, ${
@@ -510,7 +551,7 @@ const OutlineRow = React.memo(function OutlineRow({
             )}
           </View>
         )}
-      </TouchableOpacity>
+      </Pressable>
       <TouchableOpacity
         {...signalTarget(section ? 'resources.toggle-branch' : 'resources.toggle-gathered')}
         accessibilityRole="checkbox"
@@ -612,6 +653,7 @@ const styles = StyleSheet.create({
   },
   menuActionText: {color: theme.text, fontSize: 13, fontWeight: '700'},
   menuActionHint: {color: theme.textDim, fontSize: 11, lineHeight: 15, marginTop: 2},
+  menuNote: {color: theme.textDim, fontSize: 11, lineHeight: 15, paddingHorizontal: 2},
   menuCancel: {minHeight: 44, alignItems: 'center', justifyContent: 'center'},
   menuCancelText: {color: theme.textDim, fontSize: 12, fontWeight: '700'},
   listTabs: {flexDirection: 'row', gap: 6, marginBottom: 10},

@@ -274,7 +274,7 @@ test('the checklist measures the tree rather than the flat totals', () => {
   // so one machine cannot read as far as four hundred ingots.
   assert.match(
     screen,
-    /gatherableNodeIdsUnder\(\s*snapshot\.root,\s*snapshot\.totals\.byproductCoverageByNode,\s*kind,?\s*\)/u,
+    /gatherableNodeIdsUnder\(snapshot\.root, \{\s*byproductCoverageByNode: snapshot\.totals\.byproductCoverageByNode,\s*kind,\s*catalysts,\s*\}\)/u,
   );
   assert.match(screen, /gatheredPercentage\(gatherable, countable\)/u);
   // totals.inputs still feeds the CSV, but nothing about progress depends on it any more.

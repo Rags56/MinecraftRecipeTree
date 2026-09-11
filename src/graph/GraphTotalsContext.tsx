@@ -23,11 +23,6 @@ export interface GraphTotalsSnapshot {
   visibleNodeIds?: ReadonlySet<string>;
   /** Folds a node here and in the tree at once: there is one collapse, not two. */
   onToggleNode(node: ItemTreeNode): void;
-  /**
-   * Flips whether a recipe input is consumed or kept, which is what moves an item between the two
-   * lists. The same override the tree's own node menu writes, so both agree and it persists.
-   */
-  onToggleReusable(node: ItemTreeNode): void;
   /** One preference shared with the tree, not a second copy of it. */
   useByproducts: boolean;
   onUseByproductsChange(value: boolean): void;
@@ -64,7 +59,6 @@ export function GraphTotalsProvider({children}: {children: React.ReactNode}) {
         current.version === next.version &&
         current.visibleNodeIds === next.visibleNodeIds &&
         current.onToggleNode === next.onToggleNode &&
-        current.onToggleReusable === next.onToggleReusable &&
         current.useByproducts === next.useByproducts &&
         current.onUseByproductsChange === next.onUseByproductsChange &&
         current.onResourceTap === next.onResourceTap &&

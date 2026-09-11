@@ -1,3 +1,4 @@
+import {catalystItemIdentity} from './catalystItems.ts';
 import type {ItemTreeNode} from './model';
 import type {NodeByproductCoverage} from './treeTotals.ts';
 
@@ -30,7 +31,8 @@ export interface ResourceOutlineRow {
   byproductCovered: boolean;
   /**
    * Consumed by the recipe that asked for it. A tool or a machine is not: it is needed once and
-   * survives the craft, which is a different kind of shopping from four hundred ingots.
+   * survives the craft. Reported so the row menu can say what the pack does with the item, and
+   * deliberately not used to decide which list it belongs on -- that is the user's choice.
    */
   consumed: boolean;
   retentionMode?: 'reusable' | 'durability';
@@ -41,8 +43,23 @@ export interface ResourceOutlineRow {
 /** Which of the two lists a row belongs to. */
 export type ResourceOutlineKind = 'consumed' | 'catalyst';
 
-export function outlineRowKind(row: ResourceOutlineRow): ResourceOutlineKind {
-  return row.consumed ? 'consumed' : 'catalyst';
+/**
+ * The items the user has moved to the catalysts list, by logical identity. Nothing is put there on
+ * the pack's word: `consumed` below says what the recipe does with an item, which is worth knowing
+ * but is not the same as how someone wants to shop for it.
+ */
+export type CatalystItems = ReadonlySet<string>;
+
+export function outlineRowKind(
+  row: ResourceOutlineRow,
+  catalysts?: CatalystItems,
+): ResourceOutlineKind {
+  return catalysts?.has(outlineRowIdentity(row)) ? 'catalyst' : 'consumed';
+}
+
+/** The logical item a row asks for, which is what a list choice is remembered against. */
+export function outlineRowIdentity(row: ResourceOutlineRow): string {
+  return catalystItemIdentity({key: row.key, tag: row.tag, variantCount: row.variants});
 }
 
 export interface ResourceOutlineOptions {
@@ -131,34 +148,43 @@ export function outlineResourceRows(
  * keyed by item, one tick would have struck off both and the list would have read half done. The
  * flat totals still add them together, which is the right answer to a different question.
  */
+export interface GatherableOptions {
+  byproductCoverageByNode?: ReadonlyMap<string, NodeByproductCoverage>;
+  /** One list's worth, or the whole tree when it is left out. */
+  kind?: ResourceOutlineKind;
+  catalysts?: CatalystItems;
+}
+
 export function gatherableNodeIdsUnder(
   node: ItemTreeNode,
-  byproductCoverageByNode?: ReadonlyMap<string, NodeByproductCoverage>,
-  kind?: ResourceOutlineKind,
+  options: GatherableOptions = {},
 ): string[] {
-  const wanted = (current: ItemTreeNode) =>
-    kind === undefined || (current.nonConsumed !== true) === (kind === 'consumed');
+  const {byproductCoverageByNode, kind, catalysts} = options;
+  const isCatalyst = (current: ItemTreeNode) =>
+    catalysts?.has(catalystItemIdentity(current)) === true;
+  // Covered by a byproduct is not something to go and get, so turning byproducts on moves the count
+  // as well as the amounts.
+  const covered = (current: ItemTreeNode) =>
+    isByproductCovered(byproductCoverageByNode?.get(current.id));
   const nodeIds: string[] = [];
   const visit = (current: ItemTreeNode) => {
+    // A tool is the end of its own list: whether it is bought or built, what the tools list asks
+    // for is the tool. Its ingredients belong to the materials list, which is why the walk carries
+    // on through it there -- moving an item between lists moves that item, not the work under it.
+    if (isCatalyst(current)) {
+      if (kind !== 'consumed' && !covered(current)) nodeIds.push(current.id);
+      if (kind === 'catalyst') return;
+    }
     const source = current.source ?? current.collapsedSource;
     if (!source) {
-      // Covered by a byproduct is not something to go and get, so turning byproducts on moves the
-      // count as well as the amounts.
-      if (!isByproductCovered(byproductCoverageByNode?.get(current.id)) && wanted(current)) {
+      if (!isCatalyst(current) && kind !== 'catalyst' && !covered(current)) {
         nodeIds.push(current.id);
       }
       return;
     }
     for (const child of source.inputs) visit(child);
   };
-  const source = node.source ?? node.collapsedSource;
-  // The node itself is a resource when it has no recipe; otherwise only its ends count.
-  if (!source) {
-    return isByproductCovered(byproductCoverageByNode?.get(node.id)) || !wanted(node)
-      ? []
-      : [node.id];
-  }
-  for (const child of source.inputs) visit(child);
+  visit(node);
   return nodeIds;
 }
 
@@ -169,8 +195,9 @@ export function gatherableNodeIdsUnder(
 export function filterOutlineRows(
   rows: readonly ResourceOutlineRow[],
   kind: ResourceOutlineKind,
+  catalysts?: CatalystItems,
 ): ResourceOutlineRow[] {
-  const keep = rows.map(row => outlineRowKind(row) === kind);
+  const keep = rows.map(row => outlineRowKind(row, catalysts) === kind);
   for (let index = rows.length - 1; index >= 0; index -= 1) {
     if (keep[index] || !rows[index].expanded) continue;
     for (let next = index + 1; next < rows.length && rows[next].depth > rows[index].depth; next += 1) {
@@ -180,5 +207,13 @@ export function filterOutlineRows(
       }
     }
   }
-  return rows.filter((_row, index) => keep[index]);
+  return rows
+    .filter((_row, index) => keep[index])
+    // On the tools list a tool is a single line, even when its own recipe is open in the tree: what
+    // the list asks for is the tool, and what it takes to make one is materials.
+    .map(row =>
+      kind === 'catalyst' && outlineRowKind(row, catalysts) === 'catalyst' && row.expanded
+        ? {...row, expanded: false, collapsed: false}
+        : row,
+    );
 }

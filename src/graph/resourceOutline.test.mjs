@@ -200,8 +200,14 @@ test('turning byproducts on recalculates the list, not just the setting', () => 
   assert.equal(on.find(r => r.key === 'plate').byproductCovered, true);
   assert.equal(on.find(r => r.key === 'plate').byproductCredited, 8);
   // Nothing to gather for a covered row, so the count and the percentage move with it.
-  assert.deepEqual(gatherableNodeIdsUnder(root, covered).sort(), ['casing.s.1', 'root.s.1']);
-  assert.deepEqual(gatherableNodeIdsUnder(casing, covered), ['casing.s.1']);
+  assert.deepEqual(
+    gatherableNodeIdsUnder(root, {byproductCoverageByNode: covered}).sort(),
+    ['casing.s.1', 'root.s.1'],
+  );
+  assert.deepEqual(
+    gatherableNodeIdsUnder(casing, {byproductCoverageByNode: covered}),
+    ['casing.s.1'],
+  );
 });
 
 test('a partly covered row keeps its requirement and states the credit', () => {
@@ -215,48 +221,101 @@ test('a partly covered row keeps its requirement and states the credit', () => {
   assert.equal(row.byproductCredited, 3);
   assert.equal(row.byproductCovered, false);
   // Still something to go and get, since a byproduct only covered part of it.
-  assert.ok(gatherableNodeIdsUnder(root, partial).includes('casing.s.0'));
+  assert.ok(
+    gatherableNodeIdsUnder(root, {byproductCoverageByNode: partial}).includes('casing.s.0'),
+  );
 });
 
-test('separates what is consumed from what is kept', () => {
-  const hammer = node('c.s.0', 'hammer', {nonConsumed: true, retentionMode: 'durability', retentionUses: 128});
+/** A hammer the pack keeps, and a plate it consumes, under one casing. */
+function withTool() {
+  const hammer = node('c.s.0', 'hammer', {
+    nonConsumed: true,
+    retentionMode: 'durability',
+    retentionUses: 128,
+  });
   const plate = node('c.s.1', 'plate', {amount: 8});
   const casing = node('root.s.0', 'casing', {source: recipe('c', [hammer, plate])});
-  const root = node('root', 'stargate', {source: recipe('root', [casing])});
+  return {root: node('root', 'stargate', {source: recipe('root', [casing])}), casing, hammer};
+}
 
-  const rows = resourceOutlineRows(root);
-  assert.equal(rows.find(r => r.key === 'hammer').consumed, false);
-  assert.equal(rows.find(r => r.key === 'hammer').retentionMode, 'durability');
-  assert.equal(rows.find(r => r.key === 'hammer').retentionUses, 128);
-  assert.equal(rows.find(r => r.key === 'plate').consumed, true);
-  assert.equal(outlineRowKind(rows.find(r => r.key === 'hammer')), 'catalyst');
+test('nothing is put on the tools list without being asked', () => {
+  const rows = resourceOutlineRows(withTool().root);
+  const hammer = rows.find(r => r.key === 'hammer');
+  // The pack's word is reported, because it is worth knowing when deciding...
+  assert.equal(hammer.consumed, false);
+  assert.equal(hammer.retentionMode, 'durability');
+  assert.equal(hammer.retentionUses, 128);
+  // ...and it decides nothing: some people would rather shop for a hammer with the materials.
+  assert.equal(outlineRowKind(hammer), 'consumed');
+  assert.equal(outlineRowKind(hammer, new Set()), 'consumed');
+  assert.deepEqual(filterOutlineRows(rows, 'consumed').map(r => r.key), [
+    'casing',
+    'plate',
+    'hammer',
+  ]);
+  assert.deepEqual(filterOutlineRows(rows, 'catalyst'), []);
+});
+
+test('the user moving an item is what moves it between the lists', () => {
+  const rows = resourceOutlineRows(withTool().root);
+  const catalysts = new Set(['hammer']);
+  assert.equal(outlineRowKind(rows.find(r => r.key === 'hammer'), catalysts), 'catalyst');
 
   // Each list keeps the sections that lead to what it holds, so a tool three recipes down still
   // arrives with the path that explains where it is needed.
-  assert.deepEqual(filterOutlineRows(rows, 'catalyst').map(r => r.key), ['casing', 'hammer']);
-  assert.deepEqual(filterOutlineRows(rows, 'consumed').map(r => r.key), ['casing', 'plate']);
+  assert.deepEqual(
+    filterOutlineRows(rows, 'catalyst', catalysts).map(r => r.key),
+    ['casing', 'hammer'],
+  );
+  assert.deepEqual(
+    filterOutlineRows(rows, 'consumed', catalysts).map(r => r.key),
+    ['casing', 'plate'],
+  );
 });
 
 test('a section with nothing for a list is left out of it', () => {
   const plate = node('c.s.0', 'plate');
   const casing = node('root.s.0', 'casing', {source: recipe('c', [plate])});
-  const hammer = node('root.s.1', 'hammer', {nonConsumed: true});
+  const hammer = node('root.s.1', 'hammer');
   const root = node('root', 'stargate', {source: recipe('root', [casing, hammer])});
   const rows = resourceOutlineRows(root);
-  // Casing holds nothing reusable, so the catalysts list does not carry it for nothing.
-  assert.deepEqual(filterOutlineRows(rows, 'catalyst').map(r => r.key), ['hammer']);
+  // Casing holds nothing the user moved, so the tools list does not carry it for nothing.
+  assert.deepEqual(
+    filterOutlineRows(rows, 'catalyst', new Set(['hammer'])).map(r => r.key),
+    ['hammer'],
+  );
 });
 
 test('a tick cascades only within the list it was tapped in', () => {
-  const hammer = node('c.s.0', 'hammer', {nonConsumed: true});
-  const plate = node('c.s.1', 'plate');
-  const casing = node('root.s.0', 'casing', {source: recipe('c', [hammer, plate])});
-  const root = node('root', 'stargate', {source: recipe('root', [casing])});
-  assert.deepEqual(gatherableNodeIdsUnder(casing, undefined, 'consumed'), ['c.s.1']);
-  assert.deepEqual(gatherableNodeIdsUnder(casing, undefined, 'catalyst'), ['c.s.0']);
-  // Unscoped still covers the whole branch, which is what the progress total uses.
-  assert.deepEqual(gatherableNodeIdsUnder(casing).sort(), ['c.s.0', 'c.s.1']);
-  assert.deepEqual(gatherableNodeIdsUnder(root, undefined, 'catalyst'), ['c.s.0']);
+  const {root, casing} = withTool();
+  const catalysts = new Set(['hammer']);
+  assert.deepEqual(gatherableNodeIdsUnder(casing, {kind: 'consumed', catalysts}), ['c.s.1']);
+  assert.deepEqual(gatherableNodeIdsUnder(casing, {kind: 'catalyst', catalysts}), ['c.s.0']);
+  // Unscoped still covers the whole branch, which is what the empty state asks about.
+  assert.deepEqual(gatherableNodeIdsUnder(casing, {catalysts}).sort(), ['c.s.0', 'c.s.1']);
+  assert.deepEqual(gatherableNodeIdsUnder(root, {kind: 'catalyst', catalysts}), ['c.s.0']);
+  // With nothing moved, everything is a material and the tools list is empty.
+  assert.deepEqual(gatherableNodeIdsUnder(root, {kind: 'consumed'}).sort(), ['c.s.0', 'c.s.1']);
+  assert.deepEqual(gatherableNodeIdsUnder(root, {kind: 'catalyst'}), []);
+});
+
+test('a tool is one line on its list, and its materials stay on the other', () => {
+  // A crafted tool is still a tool: the tools list asks for the hammer however it is come by, and
+  // what a hammer costs is materials. Moving an item moves that item, not the work under it.
+  const ingot = node('h.s.0', 'ingot', {amount: 3});
+  const hammer = node('root.s.0', 'hammer', {source: recipe('h', [ingot])});
+  const root = node('root', 'stargate', {source: recipe('root', [hammer])});
+  const catalysts = new Set(['hammer']);
+
+  assert.deepEqual(gatherableNodeIdsUnder(root, {kind: 'catalyst', catalysts}), ['root.s.0']);
+  assert.deepEqual(gatherableNodeIdsUnder(root, {kind: 'consumed', catalysts}), ['h.s.0']);
+  const rows = filterOutlineRows(resourceOutlineRows(root), 'catalyst', catalysts);
+  assert.deepEqual(rows.map(r => r.key), ['hammer']);
+  // No disclosure on the tools list: there is nothing of its own listed underneath it there.
+  assert.equal(rows[0].expanded, false);
+  assert.equal(rows[0].collapsed, false);
+  // The tree is untouched by any of this.
+  assert.equal(hammer.source.inputs.length, 1);
 });
 
 test('the two lists are a filter over one tree, not a second classification', () => {
@@ -268,12 +327,13 @@ test('the two lists are a filter over one tree, not a second classification', ()
   // separately built list -- nothing about the tree changes when the tab does.
   assert.match(screen, /\['consumed', 'Items'\]/u);
   assert.match(screen, /\['catalyst', 'Catalysts & tools'\]/u);
-  assert.match(screen, /filterOutlineRows\(outline, listKind\)/u);
-  // Setting a row's kind goes through the tree's own retention override, so the tree, the totals
-  // and the other list all agree and the choice survives a restart.
-  assert.match(screen, /onToggleReusable\(node\)/u);
-  assert.match(screen, /Set as catalyst/u);
-  assert.match(screen, /Set as resource/u);
+  assert.match(screen, /filterOutlineRows\(outline, listKind, catalysts\)/u);
+  assert.match(screen, /Treat as tool\/catalyst/u);
+  assert.match(screen, /Treat as resource/u);
+  // The list an item is on is the user's own choice, saved as its own thing. It must not be the
+  // tree's retention override: that changes what the recipe consumes, and the amounts with it.
+  assert.match(screen, /persistCatalystItems\(data\.descriptor, next\)/u);
+  assert.doesNotMatch(screen, /onToggleReusable/u);
   // And the cascade is scoped to the list, so ticking a section in one does not strike off the other.
-  assert.match(screen, /gatherableNodeIdsUnder\(node, coverage, listKind\)/u);
+  assert.match(screen, /kind: listKind,\s*catalysts,/u);
 });
