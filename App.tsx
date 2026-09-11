@@ -1190,21 +1190,6 @@ function Shell({
             }>
             <ResourcesScreen contentZoom={contentZoom} />
           </View>
-          <View
-            style={[
-              styles.body,
-              Platform.OS !== 'web' && styles.nativeWorkspacePane,
-              Platform.OS !== 'web' && tab === 'resources' && styles.nativeWorkspacePaneActive,
-              Platform.OS !== 'web' && tab !== 'resources' && styles.nativeWorkspacePaneInactive,
-              Platform.OS === 'web' && tab !== 'resources' && styles.hidden,
-            ]}
-            pointerEvents={Platform.OS !== 'web' && tab !== 'resources' ? 'none' : 'auto'}
-            accessibilityElementsHidden={Platform.OS !== 'web' && tab !== 'resources'}
-            importantForAccessibility={
-              Platform.OS !== 'web' && tab !== 'resources' ? 'no-hide-descendants' : 'auto'
-            }>
-            <ResourcesScreen contentZoom={contentZoom} />
-          </View>
           {data.capabilities.mobs && hasVisitedMobs && (
             <View
               style={[

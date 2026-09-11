@@ -227,3 +227,12 @@ test('a tag requirement and a concrete one are separate entries, not one row twi
   assert.equal(resourceCompletionPercentage(resources, completed), 50);
   assert.deepEqual([...prunedCompletedResources(resources, completed)], [resourceIdentity(concrete)]);
 });
+
+test('the resources tab is mounted exactly once', () => {
+  // It was mounted twice: the anchor the pane was inserted above is also the last line of the
+  // pane itself, so inserting it a second time matched and appended a duplicate, and both copies
+  // rendered on the same screen.
+  const source = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
+  const mounts = source.match(/<ResourcesScreen\b/gu) ?? [];
+  assert.equal(mounts.length, 1, `ResourcesScreen is mounted ${mounts.length} times`);
+});
